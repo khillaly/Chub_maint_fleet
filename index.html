@@ -4225,12 +4225,13 @@ try {
                 </div>
             </div>
 
-            <div class="card" id="inchargeDisposalCard"
+            <div class="card collapsible-card collapsed" id="inchargeDisposalCard"
                 style="margin-bottom:28px;border:2px solid #f4a300;display:none;">
-                <div class="card-header" style="background:#fff9ec;color:#7a5300;">
+                <div class="card-header" style="background:#fff9ec;color:#7a5300;cursor:pointer;user-select:none;">
                     <span>🗑️</span> Disposal Requests — Your Approval
                     <span id="inchargeDisposalCount"
                         style="margin-left:auto;background:#f4a300;color:white;padding:3px 12px;border-radius:20px;font-size:.8rem;font-weight:700;">0</span>
+                    <span class="collapse-caret">▼</span>
                 </div>
                 <div class="card-body">
                                       <p style="font-size:.88rem;color:#7a5300;margin-bottom:14px;">Approve disposal (first-level). Once you approve, it goes to the Assets Manager for final approval.</p>
@@ -13073,10 +13074,29 @@ if (n.type === 'pm_submitted') {
                 };
 
                 const pending = all.filter(r => isLocationIncharge(r) || isTechIncharge(r));
-                const others = all.filter(r => !isLocationIncharge(r) && !isTechIncharge(r)).slice(0, 20);
+
+                // ✅ Only show disposals where THIS in-charge is involved:
+                //    • the equipment is located in their department, OR
+                //    • the requesting technician belongs to their department.
+                const isRelevantToMe = (r) => {
+                    if (normalizeText(r.dept) === normalizeText(dept)) return true;
+                    const tech = users[r.requestedBy];
+                    if (tech) {
+                        const td = Array.isArray(tech.depts) ? tech.depts : (tech.dept ? [tech.dept] : []);
+                        if (td.some(d => normalizeText(d) === normalizeText(dept))) return true;
+                    }
+                    return false;
+                };
+                const others = all.filter(r =>
+                    !isLocationIncharge(r) && !isTechIncharge(r) && isRelevantToMe(r)
+                ).slice(0, 20);
 
                 cnt.textContent = pending.length;
-                if (all.length === 0) { card.style.display = 'none'; return; }
+                if (!pending.length && !others.length) {
+                    card.style.display = 'block';
+                    list.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 No disposal requests to display.</div>';
+                    return;
+                }
                 card.style.display = 'block';
                 list.innerHTML = '';
                 if (pending.length) {
@@ -13090,6 +13110,11 @@ if (n.type === 'pm_submitted') {
                     h.innerHTML = '<h3 style="font-size:.95rem;color:#5b7b96;margin:14px 0 8px;">📋 Recent</h3>';
                     list.appendChild(h);
                     others.forEach(r => list.appendChild(renderDisposalCard(r, 'incharge')));
+                }
+                if (!pending.length && !others.length) {
+                    const h = document.createElement('div');
+                    h.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 No disposed items.</div>';
+                    list.appendChild(h);
                 }
                 bindDisposalButtons(list, all, 'incharge');
             }
