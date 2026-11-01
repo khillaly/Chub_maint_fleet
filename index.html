@@ -46,7 +46,8 @@
 
                     // 2) APK shell update (for users who installed the app)
                     const installedApkVersion = localStorage.getItem('chub_apk_version') || '1.0.0';
-                    if (data.apk_version && data.apk_version !== installedApkVersion && !this.apkNotified && data.apk_url) {
+                    if (data.apk_version && data.apk_version !== installedApkVersion && !this.apkNotified && data.apk_url &&
+    (/; wv\)/.test(navigator.userAgent) || matchMedia('(display-mode: standalone)').matches)) {
                         this.apkNotified = true;
                         this.showApkBanner(data);
                     }
@@ -203,7 +204,7 @@ signInAnonymously(auth)
 // ==========================================
 // FIREBASE PUSH NOTIFICATIONS SETUP
 // ==========================================
-window.setupPushNotifications = async function() {
+window.setupPushNotifications = async function(userName) {
     try {
         const messaging = getMessaging(app);
         
@@ -227,9 +228,10 @@ window.setupPushNotifications = async function() {
             console.log('FCM Token:', currentToken);
             
             // Save this token to Firestore for the logged-in user
-            if (typeof currentLoggedInName !== 'undefined' && currentLoggedInName) {
-                await window.FB.setDoc(
-                    window.FB.doc(window.FB.db, 'users', userDocId(currentLoggedInName)), 
+            if (userName) {
+    const docId = String(userName).replace(/\s+/g, '_').replace(/[^A-Za-z0-9_\-\.]/g, '');
+    await window.FB.setDoc(
+        window.FB.doc(window.FB.db, 'users', docId),
                     { fcmToken: currentToken }, 
                     { merge: true }
                 );
@@ -279,7 +281,7 @@ try {
         }
 
         body::before {
-            content: 'CHUB REFRIGERATOR MAINTENANCE';
+            content: 'CHUB  MAINT FLEET SYSTEM ';
             position: fixed;
             top: 50%;
             left: 50%;
@@ -2800,11 +2802,19 @@ try {
             margin-bottom: 6px
         }
 
-        .disposal-card .dc-meta {
+                .disposal-card .dc-meta {
             font-size: .82rem;
             color: #7a5300;
-            margin-top: 4px
+            margin-top: 4px;
         }
+        .disposal-card .cc-head {
+            cursor: pointer; user-select: none; transition: background .15s;
+            padding: 4px 6px; margin: -4px -6px 0; border-radius: 10px;
+        }
+        .disposal-card .cc-head:hover { background: rgba(0,0,0,.035); }
+        .disposal-card .cc-caret { display: inline-block; margin-left: 8px; font-size: .78rem; color: #5b7b96; transition: transform .25s; }
+        .disposal-card.collapsed .cc-caret { transform: rotate(-90deg); }
+        .disposal-card.collapsed .cc-body { display: none; }
 
         @media (max-width:900px) {
             .generator-selector {
@@ -3547,6 +3557,38 @@ try {
         #pfxPasswordModal .modal-box {
             z-index: 6001 !important;
         }
+
+        /* ===== PERMISSION CHIPS (Manager role editor) ===== */
+        .perm-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: #fbfdff;
+            border: 1.5px solid #cfdfeb;
+            border-radius: 20px;
+            font-size: .78rem;
+            font-weight: 600;
+            color: #12405e;
+            cursor: pointer;
+            transition: .15s;
+            user-select: none;
+        }
+        .perm-chip input[type="checkbox"] {
+            accent-color: #1e4a6d;
+            cursor: pointer;
+            margin: 0;
+            width: 15px;
+            height: 15px;
+        }
+        .perm-chip:hover { border-color: #1e4a6d; }
+        .perm-chip:has(input:checked) {
+            background: #e2f0e6;
+            border-color: #1b6b3f;
+            color: #1b6b3f;
+        }
+        body.dark .perm-chip { background: #0f172a; color: #cbd5e1; border-color: #475569; }
+        body.dark .perm-chip:has(input:checked) { background: #155231; color: #e2e8f0; }
     </style>
 </head>
 
@@ -3940,7 +3982,13 @@ try {
                     </div>
                 </div>
             </div> <!-- END OF AC CHECKLIST BLOCK -->
-
+<!-- BIOMEDICAL CHECKLIST BLOCK (dynamic) -->
+<div id="bioChecklistBlock" style="display:none;">
+    <div class="card">
+        <div class="card-header"><span>🏥</span> <span id="bioChecklistTitle">PM Checklist</span></div>
+        <div class="card-body" id="bioChecklistItems"></div>
+    </div>
+</div>
             <!-- NO CHECKLIST BLOCK -->
             <div id="noChecklistBlock" style="display:none; text-align:center; padding: 40px 20px; background:#fbfdff; border-radius:16px; border:1px dashed #cfdfeb;">
                 <div style="font-size:3rem; margin-bottom:10px;">⚡</div>
@@ -4154,6 +4202,7 @@ try {
                             <thead>
                                 <tr>
                                     <th>Tag</th>
+                                    <th>Equipment Name</th>
                                     <th>Location</th>
                                     <th>Brand / Model</th>
                                     <th>Working?</th>
@@ -4166,7 +4215,7 @@ try {
                             </thead>
                             <tbody id="inventoryTableBody">
                                 <tr>
-                                    <td colspan="9"
+                                    <td colspan="10"
                                         style="text-align:center;color:#5b7b96;font-style:italic;padding:14px;">Loading…
                                     </td>
                                 </tr>
@@ -4184,8 +4233,13 @@ try {
                         style="margin-left:auto;background:#f4a300;color:white;padding:3px 12px;border-radius:20px;font-size:.8rem;font-weight:700;">0</span>
                 </div>
                 <div class="card-body">
-                    <p style="font-size:.88rem;color:#7a5300;margin-bottom:14px;">Approve disposal (first-level). Once
-                        you approve, it goes to the Assets Manager for final approval.</p>
+                                      <p style="font-size:.88rem;color:#7a5300;margin-bottom:14px;">Approve disposal (first-level). Once you approve, it goes to the Assets Manager for final approval.</p>
+                    <div class="filter-selector" id="inchargeDisposalTimeFilterBar" style="margin-bottom:12px;">
+                        <div class="filter-chip active" data-time="all">📋 All Time</div>
+                        <div class="filter-chip" data-time="1">📅 Last 1 Month</div>
+                        <div class="filter-chip" data-time="3">📅 Last 3 Months</div>
+                        <div class="filter-chip" data-time="6">📅 Last 6 Months</div>
+                    </div>
                     <div id="inchargeDisposalList"></div>
                 </div>
             </div>
@@ -4201,11 +4255,12 @@ try {
 
         <!-- ============ ASSETS MANAGER SECTION ============ -->
         <div id="assetsManagerSection" style="display:none;">
-            <div class="card" style="margin-bottom:24px;border:2px solid #7a4c9c;">
-                <div class="card-header" style="background:#f3e8ff;color:#5d3578;">
+            <div class="card collapsible-card collapsed" style="margin-bottom:24px;border:2px solid #7a4c9c;">
+                <div class="card-header" style="background:#f3e8ff;color:#5d3578;cursor:pointer;user-select:none;">
                     <span>🗑️</span> Disposal Requests — Final Approval
                     <span id="amDisposalCount"
                         style="margin-left:auto;background:#7a4c9c;color:white;padding:3px 12px;border-radius:20px;font-size:.8rem;font-weight:700;">0</span>
+                    <span class="collapse-caret">▼</span>
                 </div>
                 <div class="card-body">
                     <p style="font-size:.88rem;color:#5d3578;margin-bottom:14px;">Final approval of disposal. Approve
@@ -4216,30 +4271,45 @@ try {
                         <div class="filter-chip" data-status="disposed">✅ Disposed</div>
                         <div class="filter-chip" data-status="all">📋 All</div>
                     </div>
+                    <div class="filter-selector" id="amDisposalTimeFilterBar" style="margin-bottom:12px;">
+                        <div class="filter-chip active" data-time="all">📋 All Time</div>
+                        <div class="filter-chip" data-time="1">📅 Last 1 Month</div>
+                        <div class="filter-chip" data-time="3">📅 Last 3 Months</div>
+                        <div class="filter-chip" data-time="6">📅 Last 6 Months</div>
+                    </div>
                     <div id="amDisposalList">
                         <div class="info-loading" style="text-align:center;padding:20px;color:#9cb9d0;">⏳ Loading…</div>
                     </div>
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom:24px;border:2px solid #2a6b96;">
+            <div class="card collapsible-card collapsed" style="margin-bottom:24px;border:2px solid #2a6b96;">
                 <div class="card-header" style="background:#e6f0fa;color:#1e4a6d;">
                     <span>🧊</span> All Equipment — Fleet-Wide
                     <span id="amInvCount"
                         style="margin-left:auto;background:#1e4a6d;color:white;padding:3px 12px;border-radius:20px;font-size:.8rem;font-weight:700;">—</span>
+                    <span class="collapse-caret">▼</span>
                 </div>
                 <div class="card-body">
                     <p style="font-size:.88rem;color:#3a6583;margin-bottom:14px;">Assets Manager: Add equipment to any
                         department and assign an owner technician. You can also edit or remove any item.</p>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px; align-items:center;">
                         <button class="btn-add" id="amAddEquipmentBtn">➕ Add New Equipment</button>
                         <button class="btn-secondary" id="amRefreshInvBtn">🔄 Refresh</button>
+                        <button class="btn-pdf" id="amDownloadInventoryPdfBtn" style="background:#0b3d91;"><span>📄</span> Download Inventory PDF</button>
+                        
+                        <input type="text" id="amInvSearch" placeholder="🔍 Search tag or serial..." style="padding:10px 16px;border-radius:40px;border:1.5px solid #cfdfeb;flex:1;min-width:200px;font-family:inherit;font-size:0.9rem;">
+                        
+                        <select id="amDeptFilter" style="padding:10px 16px;border-radius:40px;border:1.5px solid #cfdfeb;font-weight:600;margin-left:auto;min-width:200px;font-family:inherit;cursor:pointer;">
+                            <option value="all">🏢 All Departments</option>
+                        </select>
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="inv-table">
                             <thead>
                                 <tr>
                                     <th>Tag</th>
+                                    <th>Equipment Name</th>
                                     <th>Department</th>
                                     <th>Location</th>
                                     <th>Brand / Model</th>
@@ -4702,6 +4772,7 @@ try {
                             <thead>
                                 <tr>
                                     <th>Tag</th>
+                                    <th>Equipment Name</th>
                                     <th>Department</th>
                                     <th>Location</th>
                                     <th>Brand / Model</th>
@@ -4714,7 +4785,7 @@ try {
                             </thead>
                             <tbody id="supervisorInventoryTableBody">
                                 <tr>
-                                    <td colspan="9"
+                                    <td colspan="10"
                                         style="text-align:center;color:#5b7b96;font-style:italic;padding:14px;">Loading…
                                     </td>
                                 </tr>
@@ -4769,16 +4840,14 @@ try {
 
             <div class="card collapsible-card collapsed" style="margin-bottom:24px;border:2px solid #2a6b96;">
                 <div class="card-header" style="background:#e6f0fa;color:#1e4a6d;">
-                    <span>👨‍🔧</span> Manage Technicians &amp; Contact Info
+                    <span>👨‍🔧</span> Manage Technicians &amp; Assets Manager &amp; Contact Info
                     <span
                         style="margin-left:auto;font-size:.78rem;background:#1e4a6d;color:white;padding:3px 12px;border-radius:20px;font-weight:700;">Manager
                         Only</span>
                     <span class="collapse-caret">▼</span>
                 </div>
                 <div class="card-body">
-                    <p style="font-size:.88rem;color:#5b7b96;margin-bottom:14px;">Add or edit Technician accounts. Phone
-                        and email here appear on the QR info page. New technicians appear instantly on the Technician
-                        login screen.</p>
+                    <p style="font-size:.88rem;color:#5b7b96;margin-bottom:14px;">Add or edit <strong>Technician</strong> accounts and the <strong>Assets Manager</strong> account. Phone and email here appear on the QR info page. New accounts appear instantly on the login screen.</p>
                     <div id="technicianEditorList" style="margin-bottom:12px;"></div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
                         <button class="btn-add" id="addTechnicianBtn">➕ Add New Technician</button>
@@ -5136,6 +5205,11 @@ try {
                 <div class="field-group"><label for="newRefNextPm">Next PM date (auto)</label><input type="date"
                         id="newRefNextPm"></div>
             </div>
+            <div class="field-group" id="newRefBioChecklistWrap" style="display:none;background:#f0fdf4;border:1.5px solid #b8dfc3;border-radius:16px;padding:14px 16px;">
+    <label for="newRefBioChecklist">📋 PM Checklist for this equipment type *</label>
+    <div id="newRefBioChecklistHint" style="font-size:.8rem;color:#5b7b96;margin:4px 0 8px;">Type one checklist item per line.</div>
+    <textarea id="newRefBioChecklist" class="remark-input" rows="7" placeholder="Check power cable and plug&#10;Clean exterior and filters&#10;Verify self-test passes&#10;Check alarms and indicators"></textarea>
+</div>
             <div class="field-group" id="newRefOwnerRow" style="display:none;">
                 <label for="newRefOwner">Assign Owner / Technician *</label>
                 <select id="newRefOwner"></select>
@@ -6153,20 +6227,67 @@ const AC_PM_INTERVAL_MONTHS = 6;
                 const t = String(type || '').toLowerCase();
                 return t.includes('fridge-freezer') || t.includes('combo');
             }
-            function populateTypeSelect(select, category) {
+            async function populateTypeSelect(select, category) {
                 if (!select) return;
                 const isNew = select.id === 'newRefType';
                 const manualInput = document.getElementById(isNew ? 'newRefTypeManual' : 'editRefTypeManual');
-                
-                if (category === 'biomedical') {
+                const isBioUser = isBiomedicalUser();
+
+                // 🔓 Assets Manager always types the type manually — no dropdown, no PM checklists.
+                if (currentRole === 'assetsmanager') {
+                    if (manualInput) {
+                        manualInput.style.display = 'block';
+                        manualInput.placeholder = 'Type the equipment type manually (e.g. Fridge, Lamp, Split AC)…';
+                    }
                     select.style.display = 'none';
-                    if (manualInput) manualInput.style.display = 'block';
+                    select.innerHTML = '<option value="__MANUAL__">Manual</option>';
                     return;
                 }
-                
+
+                // 🔒 Biomedical users: dropdown of existing names + "Type new…" (works for biomedical AND Other)
+                if (isBioUser && (category === 'biomedical' || category === 'equipment')) {
+                    select.style.display = 'block';
+                    if (manualInput) manualInput.style.display = 'none';
+
+                    const existing = await fetchExistingBiomedicalTypes();
+                    select.innerHTML = '';
+                    existing.forEach(t => {
+                        const o = document.createElement('option');
+                        o.value = t; o.textContent = t;
+                        select.appendChild(o);
+                    });
+                    const newOpt = document.createElement('option');
+                    newOpt.value = '__NEW__';
+                    newOpt.textContent = existing.length ? '➕ Type a new equipment name…' : '➕ Type equipment name…';
+                    select.appendChild(newOpt);
+
+                    if (!existing.length) {
+                        select.value = '__NEW__';
+                        if (manualInput) { manualInput.style.display = 'block'; manualInput.focus(); }
+                    }
+
+                    select.onchange = () => {
+                        if (select.value === '__NEW__') {
+                            if (manualInput) {
+                                manualInput.style.display = 'block';
+                                manualInput.value = '';
+                                manualInput.focus();
+                            }
+                        } else {
+                            if (manualInput) { manualInput.style.display = 'none'; manualInput.value = ''; }
+                            // Reload the checklist preview for the selected type
+                            if (select.id === 'newRefType') {
+                                clearTimeout(window.__bioTmr);
+                                window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 300);
+                            }
+                        }
+                    };
+                    return;
+                }
+
                 if (manualInput) manualInput.style.display = 'none';
                 select.style.display = 'block';
-                
+
                 const types = TYPES_BY_CATEGORY[category] || TYPES_BY_CATEGORY.equipment;
                 select.innerHTML = '';
                 types.forEach(t => {
@@ -6302,9 +6423,11 @@ const AC_PM_INTERVAL_MONTHS = 6;
                 const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T00:00:00') : new Date(s);
                 return isNaN(d.getTime()) ? null : d;
             }
-            function getNextRefPmDate_(dateVal) {
-                const d = parseToDate(dateVal);
-                if (!d) return null;
+            function getNextRefPmDate_(dateVal, bufferDays) {
+    const d0 = parseToDate(dateVal);
+    if (!d0) return null;
+    const d = new Date(d0);
+    d.setDate(d.getDate() + (bufferDays || 0));
                 const y = d.getFullYear();
                 for (let i = 0; i < REF_QUARTER_MONTHS.length; i++) {
                     const m = REF_QUARTER_MONTHS[i];
@@ -6332,7 +6455,7 @@ const AC_PM_INTERVAL_MONTHS = 6;
             function getNextPmDateByType_(type, dateVal) {
                 const cat = getCategoryForType(type);
                 if (cat === 'ac') return addMonths(dateVal, AC_PM_INTERVAL_MONTHS);
-                return getNextRefPmDate_(dateVal);
+                return getNextRefPmDate_(dateVal, 45);
             }
             function nextPmForPDF(dateVal, type) {
                 const d = getNextPmDateByType_(type || 'Fridge', dateVal);
@@ -7241,19 +7364,20 @@ const AC_PM_INTERVAL_MONTHS = 6;
                         const d = doc.data();
                         if (d && d.name) {
                             out[d.name] = {
-                                role: d.role || 'technician',
-                                pin: String(d.pin || ''),
-                                dept: d.dept || '',
-                                depts: Array.isArray(d.depts) ? d.depts : [],
-                                phone: d.phone || '',
-                                email: d.email || '',
-                                photo: d.photo || '',
-                                totpEnabled: d.totpEnabled === true,
-                                pinChangedAt: d.pinChangedAt && d.pinChangedAt.toDate
-                                    ? d.pinChangedAt.toDate().toISOString()
-                                    : (d.pinChangedAt || ''),
-                                pinChangedBy: d.pinChangedBy || ''
-                            };
+    role: d.role || 'technician',
+    pin: String(d.pin || ''),
+    dept: d.dept || '',
+    depts: Array.isArray(d.depts) ? d.depts : [],
+    phone: d.phone || '',
+    email: d.email || '',
+    photo: d.photo || '',
+    totpEnabled: d.totpEnabled === true,
+    permissions: (d.permissions && typeof d.permissions === 'object') ? d.permissions : null,
+    pinChangedAt: d.pinChangedAt && d.pinChangedAt.toDate
+        ? d.pinChangedAt.toDate().toISOString()
+        : (d.pinChangedAt || ''),
+    pinChangedBy: d.pinChangedBy || ''
+};
                         }
                     });
                     console.log('loadUsersFromFirestore: loaded', Object.keys(out).length, 'users');
@@ -7271,6 +7395,37 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     return {};
                 }
             }
+                        /* ===== PERMISSION HELPERS ===== */
+            function userRecHasPermission(u, perm) {
+                if (!u) return false;
+                if (u.permissions && typeof u.permissions === 'object') {
+                    return u.permissions[perm] === true;
+                }
+                return u.role === perm;   // fallback for legacy users
+            }
+
+            function userHasPermission(perm) {
+                if (!currentLoggedInName) return false;
+                const u = LIVE_USERS[currentLoggedInName];
+                if (u) return userRecHasPermission(u, perm);
+                return currentRole === perm;
+            }
+
+            function hasRole(role) {
+                if (currentRole === role) return true;
+                return userHasPermission(role);
+            }
+
+            function computePrimaryRoleFromPerms(perms) {
+                if (!perms) return 'technician';
+                if (perms.supervisor) return 'supervisor';
+                if (perms.infra_manager) return 'infra_manager';
+                if (perms.head_biomedical) return 'head_biomedical';
+                if (perms.assetsmanager) return 'assetsmanager';
+                if (perms.incharge) return 'incharge';
+                return 'technician';
+            }
+
             async function saveUserPhoto(name, dataUrl) {
                 if (!name) return false;
                 try {
@@ -7372,7 +7527,9 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     inchargeSignatureSerial: data.inchargeSignatureSerial || '',
                     technicianAcknowledgedRejection: data.technicianAcknowledgedRejection === true,
                     
-                    // HTML Aliases
+                    bioItems: data.bioItems || '',
+bioItemTexts: Array.isArray(data.bioItemTexts) ? data.bioItemTexts : [],
+// HTML Aliases
                     'Ref Tag': data.refTag || '',
                     'Location': data.refLocation || '',
                     'Department': data.refDept || '',
@@ -7475,6 +7632,16 @@ const AC_PM_INTERVAL_MONTHS = 6;
             }
             async function fetchRefInfoFromCloud(refTag) {
                 try {
+                    // Give Firebase a fair chance to finish initialising (up to 15s)
+                    if (!window.FB || !window.FB.ready) {
+                        await new Promise(r => {
+                            if (window.FB && window.FB.ready) return r();
+                            let done = false;
+                            const finish = () => { if (done) return; done = true; r(); };
+                            window.addEventListener('firebase-ready', finish, { once: true });
+                            setTimeout(finish, 15000);
+                        });
+                    }
                     if (!window.FB || !window.FB.ready) return { ok: false, error: 'Firebase not ready' };
                     const q = window.FB.query(
                         window.FB.collection(window.FB.db, 'pmLogs'),
@@ -7560,6 +7727,7 @@ function invalidateCache(key) {
             let TECH_CURATIVE_FILTER = 'open';
             let LIVE_USERS = {};
             let CURRENT_AM_DISPOSAL_FILTER = 'awaiting_am';
+            let CURRENT_DISPOSAL_TIME_FILTER = 'all';
             let USERS_CACHE = null;
             let USERS_CACHE_TS = 0;
             const USERS_CACHE_TTL_MS = 60 * 1000;
@@ -7567,16 +7735,226 @@ function invalidateCache(key) {
             /* ============================================================
                IDENTITY / OWNERSHIP HELPERS
                ============================================================ */
-            function buildRefIdentity(obj) {
-                const t = normalizeText(obj.refTag || obj.tag || '');
-                const l = normalizeText(obj.refLocation || obj.loc || '');
-                const s = normalizeText(obj.refSerial || obj.serial || '');
-                const m = normalizeText(obj.refModel || obj.model || '');
-                return `${t}::${l}::${s}::${m}`;
-            }
+           function buildRefIdentity(obj) {
+    return normalizeText(obj.refTag || obj.tag || '');
+}
             function getInventoryOwner(item) {
                 return String(item.owner || item.technician || '').trim();
             }
+            /* ===== BIOMEDICAL CHECKLIST LIBRARY + DOMAIN SEPARATION ===== */
+const BIO_CHECKLIST_COLLECTION = 'biomedChecklists';
+let BIO_CHECKLIST_CACHE = {};
+
+function bioTypeKey(type) {
+    return normalizeText(type).replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+function parseChecklistLines(text) {
+    const seen = new Set();
+    return String(text || '').split('\n')
+        .map(s => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+        .filter(s => { if (!s || seen.has(s.toLowerCase())) return false; seen.add(s.toLowerCase()); return true; })
+        .slice(0, 40);
+}
+async function fetchBioChecklist(type) {
+    const key = bioTypeKey(type);
+    if (!key) return null;
+    if (BIO_CHECKLIST_CACHE[key]) return BIO_CHECKLIST_CACHE[key];
+    try {
+        if (!await _waitForFB()) return null;
+        const snap = await window.FB.getDoc(window.FB.doc(window.FB.db, BIO_CHECKLIST_COLLECTION, key));
+        if (!snap.exists()) return null;
+        const d = snap.data() || {};
+        const items = Array.isArray(d.items) ? d.items.map(String).filter(Boolean) : [];
+        if (!items.length) return null;
+        const out = { key, typeName: d.typeName || type, items, updatedBy: d.updatedBy || '' };
+        BIO_CHECKLIST_CACHE[key] = out;
+        return out;
+    } catch (e) { return null; }
+}
+async function saveBioChecklist(type, items) {
+    const key = bioTypeKey(type);
+    if (!key || !items.length) return false;
+    await window.FB.setDoc(window.FB.doc(window.FB.db, BIO_CHECKLIST_COLLECTION, key), {
+        typeName: type, items, updatedBy: currentLoggedInName, updatedAt: window.FB.serverTimestamp()
+    }, { merge: true });
+    BIO_CHECKLIST_CACHE[key] = { key, typeName: type, items, updatedBy: currentLoggedInName };
+    return true;
+}
+
+function isBiomedicalUser() {
+    if (currentRole === 'head_biomedical') return true;
+    if (currentRole === 'incharge') return normalizeText(currentInchargeDept) === normalizeText(BIOMEDICAL_DEPT_NAME);
+    if (currentRole === 'technician') {
+        const u = LIVE_USERS[currentLoggedInName];
+        if (!u) return false;
+        const ds = (Array.isArray(u.depts) && u.depts.length) ? u.depts : (u.dept ? [u.dept] : []);
+        return ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
+    }
+    return false;
+}
+function equipIsBiomedical(item) {
+    return (item.equipCategory || getCategoryForType(item.type)) === 'biomedical';
+}
+function equipVisibleToMe(item) {
+    if (currentRole === 'assetsmanager' || currentRole === 'infra_manager') return true;
+    if (isBiomedicalUser()) return equipIsBiomedical(item);   // Biomedical sees ONLY biomedical units
+    return !equipIsBiomedical(item);                          // everyone else never sees them
+}
+function filterOwnerSelectForDomain(sel) {
+    if (!sel || !isBiomedicalUser()) return;
+    Array.from(sel.options).forEach(o => {
+        const u = LIVE_USERS[o.value]; if (!u) return;
+        const ds = (Array.isArray(u.depts) && u.depts.length) ? u.depts : (u.dept ? [u.dept] : []);
+        const isBioPerson = o.value === BIOMEDICAL_MANAGER_NAME || ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
+        if (!isBioPerson) o.remove();
+    });
+}
+function configureCategoryUI() {
+    const bio = isBiomedicalUser();
+    ['refCategoryFilter', 'actionCategoryFilter', 'analysisCategory'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        if (!sel._orig) sel._orig = sel.innerHTML;
+        sel.innerHTML = bio
+            ? '<option value="all">All Equipment</option><option value="biomedical">🏥 Biomedical Equipment</option>'
+            : sel._orig;
+        sel.value = 'all';
+    });
+    refCategoryMode = 'all';
+}
+
+/* ===== Get existing biomedical equipment names (for the dropdown) ===== */
+let BIOMEDICAL_TYPES_CACHE = null;
+let BIOMEDICAL_TYPES_CACHE_TS = 0;
+const BIOMEDICAL_TYPES_CACHE_TTL = 60000; // 1 minute
+
+async function fetchExistingBiomedicalTypes(forceRefresh) {
+    if (!forceRefresh && BIOMEDICAL_TYPES_CACHE && Date.now() - BIOMEDICAL_TYPES_CACHE_TS < BIOMEDICAL_TYPES_CACHE_TTL) {
+        return BIOMEDICAL_TYPES_CACHE;
+    }
+    const types = new Set();
+    // From cached checklists
+    Object.values(BIO_CHECKLIST_CACHE || {}).forEach(c => { if (c && c.typeName) types.add(c.typeName); });
+    // From existing equipment inventory
+    try {
+        const all = await fetchAllInventory();
+        all.forEach(a => {
+            if ((a.equipCategory || getCategoryForType(a.type)) === 'biomedical' && a.type) {
+                types.add(a.type);
+            }
+        });
+    } catch (e) {}
+    // From the biomedical checklists collection in Firestore
+    try {
+        if (await _waitForFB()) {
+            const snap = await window.FB.getDocs(window.FB.collection(window.FB.db, 'biomedChecklists'));
+            snap.forEach(doc => {
+                const d = doc.data() || {};
+                if (d.typeName) types.add(d.typeName);
+            });
+        }
+    } catch (e) {}
+    BIOMEDICAL_TYPES_CACHE = Array.from(types).sort();
+    BIOMEDICAL_TYPES_CACHE_TS = Date.now();
+    return BIOMEDICAL_TYPES_CACHE;
+}
+
+/* Read the currently selected type from whichever control is visible */
+function getSelectedRefType(prefix) {
+    const sel = document.getElementById(prefix + 'Type');
+    const manual = document.getElementById(prefix + 'TypeManual');
+    if (!sel) return '';
+    if (manual && manual.style.display !== 'none') {
+        return (manual.value || '').trim();
+    }
+    if (sel.value === '__NEW__') {
+        return manual ? (manual.value || '').trim() : '';
+    }
+    return (sel.value || '').trim();
+}
+
+/* Add-equipment modal: show checklist box + auto-load existing checklist */
+            async function refreshBioChecklistBlock(reset) {
+                const catEl = document.getElementById('newRefCategory');
+                const wrap = document.getElementById('newRefBioChecklistWrap');
+                if (!catEl || !wrap) return;
+                // 🔓 Assets Manager doesn't need to see PM checklists when adding equipment.
+                if (currentRole === 'assetsmanager') {
+                    wrap.style.display = 'none';
+                    return;
+                }
+                const isBioCat = catEl.value === 'biomedical';
+                wrap.style.display = isBioCat ? 'block' : 'none';
+                if (!isBioCat) return;
+    const ta = document.getElementById('newRefBioChecklist');
+    const hint = document.getElementById('newRefBioChecklistHint');
+    if (reset) { ta.value = ''; ta.dataset.loadedKey = ''; ta.dataset.fromExisting = ''; hint.textContent = 'Type one checklist item per line.'; }
+
+    // Read from whichever control is visible (dropdown OR manual input)
+    const type = getSelectedRefType('newRef');
+    const key = bioTypeKey(type);
+    if (!key || ta.dataset.loadedKey === key) return;
+    const existing = await fetchBioChecklist(type);
+    if (bioTypeKey(getSelectedRefType('newRef')) !== key) return;   // user kept typing
+    ta.dataset.loadedKey = key;
+    if (existing) {
+        ta.value = existing.items.join('\n');
+        ta.dataset.fromExisting = '1';
+        hint.innerHTML = '✅ Existing checklist for <strong>' + escapeHtml(existing.typeName) + '</strong> loaded (last saved by ' + escapeHtml(existing.updatedBy || '—') + '). You may adjust it — changes apply to every unit of this type.';
+    } else {
+        if (ta.dataset.fromExisting === '1') ta.value = '';
+        ta.dataset.fromExisting = '';
+        hint.textContent = 'No checklist yet for this type — write one item per line. It will be reused for the same equipment type.';
+    }
+}
+document.getElementById('newRefTypeManual')?.addEventListener('input', () => {
+    clearTimeout(window.__bioTmr);
+    window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 450);
+});
+// ✅ When a biomedical user picks an EXISTING type from the dropdown,
+//    load its checklist automatically (without needing to type).
+document.getElementById('newRefType')?.addEventListener('change', () => {
+    if (isBiomedicalUser()) {
+        clearTimeout(window.__bioTmr);
+        window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 300);
+    }
+});
+
+/* PM form: build tick list for the selected biomedical unit */
+async function renderBioChecklistForRef(ref) {
+    const block = document.getElementById('bioChecklistBlock');
+    const box = document.getElementById('bioChecklistItems');
+    if (!block || !box) return;
+    window.__bioCurrentItems = [];
+    if (!ref) { block.style.display = 'none'; box.innerHTML = ''; return; }
+    block.style.display = 'block';
+    document.getElementById('bioChecklistTitle').textContent = 'PM Checklist — ' + (ref.type || 'Biomedical');
+    box.innerHTML = '<div class="info-loading">⏳ Loading checklist…</div>';
+    const cl = await fetchBioChecklist(ref.type);
+    if (REF_FILTERED[refSelect.value] !== ref) return;      // user switched equipment meanwhile
+    if (!cl) {
+        box.innerHTML = `<div style="font-size:.88rem;color:#7a5300;margin-bottom:8px;">No checklist defined yet for <strong>${escapeHtml(ref.type)}</strong>. Write one item per line and save — it will be reused for every unit of this type.</div>
+            <textarea id="bioNewChecklistText" class="remark-input" rows="6"></textarea>
+            <button type="button" class="btn-primary" id="bioSaveChecklistBtn" style="margin-top:10px;padding:10px 22px;font-size:.9rem;">💾 Save checklist</button>`;
+        document.getElementById('bioSaveChecklistBtn').onclick = async () => {
+            const items = parseChecklistLines(document.getElementById('bioNewChecklistText').value);
+            if (!items.length) { toast('Enter at least one item.', 'warn'); return; }
+            await saveBioChecklist(ref.type, items);
+            renderBioChecklistForRef(ref);
+        };
+        updateChecklistProgress();
+        return;
+    }
+    window.__bioCurrentItems = cl.items;
+    box.innerHTML = cl.items.map((t, i) =>
+        `<div class="check-item"><input type="checkbox" id="bio_check${i + 1}" class="check-bio"><label for="bio_check${i + 1}">${escapeHtml(t)}</label></div>`
+    ).join('');
+    box.querySelectorAll('.check-bio').forEach(cb => {
+        cb.addEventListener('change', updateChecklistProgress);
+        cb.addEventListener('change', scheduleDraftSave);
+    });
+    updateChecklistProgress();
+}
             function canEditItem(item) {
                 if (currentRole === 'supervisor' || currentRole === 'assetsmanager') return true;
                 if (currentRole !== 'technician') return false;
@@ -7753,7 +8131,10 @@ function smartConfirm(message, opts) {
                         doorRemarks: data.doorRemarks || '',
                         doorRating: data.doorRating || '',
                         
-                        // AC Fields (NEW)
+                        // Biomedical fields
+bioItems: data.bioItems || '',
+bioItemTexts: Array.isArray(data.bioItemTexts) ? data.bioItemTexts : [],
+// AC Fields (NEW)
                         airflowItems: data.airflowItems || '',
                         airflowRemarks: data.airflowRemarks || '',
                         airflowRating: data.airflowRating || '',
@@ -7845,8 +8226,11 @@ function smartConfirm(message, opts) {
             function setAutoWorkDate() {
                 const t = new Date();
                 workDateInput.value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-                updateWorkDateDisplay();
-            }
+                const _min = new Date(t); _min.setDate(t.getDate() - 7);
+workDateInput.max = workDateInput.value;
+workDateInput.min = `${_min.getFullYear()}-${String(_min.getMonth() + 1).padStart(2, '0')}-${String(_min.getDate()).padStart(2, '0')}`;
+updateWorkDateDisplay();
+}
             function updateWorkDateDisplay() {
                 const v = workDateInput.value;
                 if (!v) { workDateDisplay.textContent = '—'; signoffWorkDate.textContent = '—'; return; }
@@ -7950,7 +8334,7 @@ function smartConfirm(message, opts) {
                         ? (ref.workingStatus === 'Not Working' ? ' ⛔' : ' ✅')
                         : '';
                     const own = canEditItem(ref) ? '' : ' 🔒';
-                    o.textContent = `${ref.tag}${ref.equipName ? ' — ' + ref.equipName : ''} | ${ref.loc} | ${ref.brand}${ws}${own}`;
+                    o.textContent = `${ref.equipName ? ref.equipName + ' — ' : ''}${ref.tag} | ${ref.loc} | ${ref.brand}${ws}${own}`;
                     refSelect.appendChild(o);
                 });
                 updateRefBanner();
@@ -7990,7 +8374,7 @@ function smartConfirm(message, opts) {
                     return;
                 }
                 const ref = REF_FILTERED[idx];
-                refTitle.textContent = `${ref.tag} — ${ref.loc}`;
+                refTitle.textContent = `${ref.equipName ? ref.equipName + ' — ' : ''}${ref.tag} — ${ref.loc}`;
                 refSub.textContent = `${ref.equipName ? ref.equipName + ' · ' : ''}${ref.dept} · ${ref.type} · ${ref.brand} · ${ref.model} · SN: ${ref.serial || 'N/A'}`;
                 updateNextPmDisplay();
                 
@@ -8015,7 +8399,8 @@ function smartConfirm(message, opts) {
                 const nBlock = document.getElementById('noChecklistBlock');
                 if (fBlock) fBlock.style.display = cat === 'fridge' ? 'block' : 'none';
                 if (aBlock) aBlock.style.display = cat === 'ac' ? 'block' : 'none';
-                if (nBlock) nBlock.style.display = (cat !== 'fridge' && cat !== 'ac') ? 'block' : 'none';
+                if (nBlock) nBlock.style.display = (cat !== 'fridge' && cat !== 'ac' && cat !== 'biomedical') ? 'block' : 'none';
+renderBioChecklistForRef(cat === 'biomedical' ? ref : null);
 
                 // 2. Handle Freezer vs Fridge Temp items
                 if (cat === 'fridge') {
@@ -8206,14 +8591,15 @@ function smartConfirm(message, opts) {
             }
 
             addRefBtn.addEventListener('click', async () => {
-                const allowed = ['technician', 'assetsmanager', 'supervisor', 'incharge'];
+                const allowed = ['technician', 'assetsmanager', 'supervisor', 'incharge', 'head_biomedical'];
                 if (!allowed.includes(currentRole)) {
                     showStatus('⛔ You cannot add equipment.', false); return;
                 }
                 const ownerRow = document.getElementById('newRefOwnerRow');
-                if (currentRole === 'assetsmanager' || currentRole === 'supervisor' || currentRole === 'incharge') {
+                if (currentRole === 'assetsmanager' || currentRole === 'supervisor' || currentRole === 'incharge' || currentRole === 'head_biomedical') {
                     ownerRow.style.display = 'block';
                     await populateOwnerSelect(document.getElementById('newRefOwner'));
+filterOwnerSelectForDomain(document.getElementById('newRefOwner'));
                 } else {
                     ownerRow.style.display = 'none';
                 }
@@ -8254,7 +8640,22 @@ function smartConfirm(message, opts) {
                     const firstVisible = Array.from(_catSel.options).find(opt => opt.style.display !== 'none');
                     if (firstVisible) _catSel.value = firstVisible.value;
                 }
-                populateTypeSelect(document.getElementById('newRefType'), _catSel.value);
+                if (isBio) {
+                    // ✅ Show BOTH "Biomedical Equipment" and "Other" (not forced into biomedical-only)
+                    Array.from(_catSel.options).forEach(opt => {
+                        opt.style.display = (opt.value === 'biomedical' || opt.value === 'equipment') ? 'block' : 'none';
+                    });
+                    if (!_catSel.value || (_catSel.value !== 'biomedical' && _catSel.value !== 'equipment')) {
+                        _catSel.value = 'biomedical';
+                    }
+                    deptSel.value = BIOMEDICAL_DEPT_NAME;
+                    deptSel.disabled = true;
+                }
+                // 🔓 Assets Manager always starts with a fresh manual type input.
+                const _newTypeManual = document.getElementById('newRefTypeManual');
+                if (currentRole === 'assetsmanager' && _newTypeManual) _newTypeManual.value = '';
+                await populateTypeSelect(document.getElementById('newRefType'), _catSel.value);
+                refreshBioChecklistBlock(true);
                 document.getElementById('dupWarning').classList.remove('show');
                 const wg = document.querySelector('#newRefWorkingGroup input[value="Working"]');
                 if (wg) wg.checked = true;
@@ -8270,7 +8671,7 @@ function smartConfirm(message, opts) {
                 () => addRefModal.classList.remove('show'));
 
             document.getElementById('addRefSave').addEventListener('click', async () => {
-                const allowed = ['technician', 'assetsmanager', 'supervisor', 'incharge'];
+                const allowed = ['technician', 'assetsmanager', 'supervisor', 'incharge', 'head_biomedical'];
                 if (!allowed.includes(currentRole)) {
                     showStatus('⛔ You cannot add equipment.', false); return;
                 }
@@ -8281,15 +8682,30 @@ function smartConfirm(message, opts) {
                 const brand = document.getElementById('newRefBrand').value.trim();
                 const model = document.getElementById('newRefModel').value.trim();
                 const catVal = document.getElementById('newRefCategory').value;
-                const type = catVal === 'biomedical' ? document.getElementById('newRefTypeManual').value.trim() : document.getElementById('newRefType').value;
+                const type = getSelectedRefType('newRef');
                 if (!type) { alert('Please enter the Equipment Type.'); return; }
                 const serial = document.getElementById('newRefSerial').value.trim() || 'N/A';
                 const ws = (document.querySelector('#newRefWorkingGroup input:checked') || {}).value || 'Working';
                 const lastPmDate = document.getElementById('newRefLastPm').value || '';
                 const nextPmDate = document.getElementById('newRefNextPm').value || '';
                 if (!tag || !dept || !loc || !brand || !model || !equipName) { alert('Please fill in all required fields (including Equipment Name).'); return; }
+const _catChosen = document.getElementById('newRefCategory').value;
+const _isBioDept = normalizeText(dept) === normalizeText(BIOMEDICAL_DEPT_NAME);
+if (_catChosen === 'biomedical' && !_isBioDept) {
+    alert('Biomedical equipment must be saved under the Biomedical department.');
+    return;
+}
+if (_isBioDept && _catChosen !== 'biomedical' && _catChosen !== 'equipment') {
+    alert('Only Biomedical or Other equipment can be saved in the Biomedical department (no air conditioners / refrigerators).');
+    return;
+}
+let _bioItems = [];
+if (_catChosen === 'biomedical') {
+    _bioItems = parseChecklistLines(document.getElementById('newRefBioChecklist').value);
+    if (!_bioItems.length) { alert('Please enter at least one checklist item for this equipment type.'); return; }
+}
                 let owner;
-                if (currentRole === 'assetsmanager' || currentRole === 'supervisor' || currentRole === 'incharge') {
+                if (currentRole === 'assetsmanager' || currentRole === 'supervisor' || currentRole === 'incharge' || currentRole === 'head_biomedical') {
                     owner = document.getElementById('newRefOwner').value || currentLoggedInName;
                 } else {
                     owner = currentLoggedInName;
@@ -8297,8 +8713,8 @@ function smartConfirm(message, opts) {
                 if (!owner) { alert('Owner not set.'); return; }
                 const ex = await findEquipmentByTag(tag);
                 if (ex) {
-                    if (!confirm('⚠️ DUPLICATE TAG\n\nAlready added by: ' + (getInventoryOwner(ex) || '(unknown)'))) return;
-                    return;
+                    alert('⛔ This tag already exists (added by ' + (getInventoryOwner(ex) || 'unknown') + '). Use a different tag.');
+return;
                 }
                 const btn = document.getElementById('addRefSave');
                 const orig = btn.innerHTML;
@@ -8313,6 +8729,7 @@ function smartConfirm(message, opts) {
                         equipCategory: category
                     };
                     await addInventoryItemToCloud(newRef, owner);
+if (_catChosen === 'biomedical' && _bioItems.length > 0) await saveBioChecklist(type, _bioItems);
                     await rememberLocation(dept, loc);
                     if (currentRole === 'technician') {
                         REF_INVENTORY.push(newRef);
@@ -8394,6 +8811,7 @@ function smartConfirm(message, opts) {
             async function openEditRefModal(ref) {
                 populateEditRefDeptSelect();
                 document.getElementById('editRefTag').value = ref.tag || '';
+document.getElementById('editRefTag').readOnly = !(currentRole === 'supervisor' || currentRole === 'assetsmanager');
                 document.getElementById('editRefDept').value = ref.dept || Object.keys(DEPARTMENTS)[0] || '';
                 populateEditRefServiceSelect();
                 document.getElementById('editRefLocation').value = ref.loc || '';
@@ -8425,11 +8843,28 @@ function smartConfirm(message, opts) {
 
                 const _cat = ref.equipCategory || getCategoryForType(ref.type);
                 if (catSel) catSel.value = _cat;
-                populateTypeSelect(document.getElementById('editRefType'), _cat);
-                if (_cat === 'biomedical') {
-                    document.getElementById('editRefTypeManual').value = ref.type || '';
+                await populateTypeSelect(document.getElementById('editRefType'), _cat);
+
+                const _editSel    = document.getElementById('editRefType');
+                const _editManual = document.getElementById('editRefTypeManual');
+                const _bioUser    = isBiomedicalUser();
+                if (currentRole === 'assetsmanager') {
+                    // Assets Manager always edits the type manually.
+                    if (_editManual) { _editManual.style.display = 'block'; _editManual.value = ref.type || ''; }
+                } else if (_bioUser && (_cat === 'biomedical' || _cat === 'equipment')) {
+                    // Try to match the saved type against the dropdown
+                    const exists = Array.from(_editSel.options).some(o => o.value === ref.type && o.value !== '__NEW__');
+                    if (exists) {
+                        _editSel.value = ref.type;
+                        if (_editManual) { _editManual.style.display = 'none'; _editManual.value = ''; }
+                    } else {
+                        _editSel.value = '__NEW__';
+                        if (_editManual) { _editManual.style.display = 'block'; _editManual.value = ref.type || ''; }
+                    }
+                } else if (_cat === 'biomedical') {
+                    if (_editManual) { _editManual.style.display = 'block'; _editManual.value = ref.type || ''; }
                 } else {
-                    document.getElementById('editRefType').value = ref.type || (TYPES_BY_CATEGORY[_cat] || ['Fridge'])[0];
+                    _editSel.value = ref.type || (TYPES_BY_CATEGORY[_cat] || ['Fridge'])[0];
                 }
                 document.getElementById('editRefSerial').value = ref.serial || '';
                 document.getElementById('editRefLastPm').value = ref.lastPmDate || '';
@@ -8463,7 +8898,7 @@ function smartConfirm(message, opts) {
                 const original = editRefModal._originalRef;
                 if (!original || !canEditItem(original)) { alert('⛔ Not allowed.'); return; }
                 const editCatVal = document.getElementById('editRefCategory').value;
-                const editTypeVal = editCatVal === 'biomedical' ? document.getElementById('editRefTypeManual').value.trim() : document.getElementById('editRefType').value;
+                const editTypeVal = getSelectedRefType('editRef');
                 if (!editTypeVal) { alert('Please enter the Equipment Type.'); return; }
 
                 const updated = {
@@ -8541,7 +8976,17 @@ function smartConfirm(message, opts) {
                 const idx = refSelect.value;
                 const ref = REF_FILTERED[idx];
                 if (!ref) return null;
-                const iname = inchargeNameInput.value.trim();
+                if (window.__ckOwner && window.__ckOwner !== ref.tag &&
+    document.querySelectorAll('.check-ref:checked,.check-ac:checked,.check-bio:checked').length) {
+    alert('⚠️ The ticks on this form were made for ' + window.__ckOwner + ', but ' + ref.tag +
+          ' is selected. Switch back, or press "Reset form" and start again.');
+    return null;
+}
+if (!workDateInput.checkValidity()) {
+    alert('⚠️ Work date must be within the last 7 days and not in the future.');
+    return null;
+}
+const iname = inchargeNameInput.value.trim();
                 if (!iname) { alert('⚠️ Please enter the department In-Charge name.'); return null; }
                 const now = new Date();
                 const ts = now.toLocaleString('en-GB', {
@@ -8552,6 +8997,7 @@ function smartConfirm(message, opts) {
                 const cat = ref.equipCategory || getCategoryForType(ref.type);
                 const isAC = cat === 'ac';
                 const isFridge = cat === 'fridge';
+const isBio = cat === 'biomedical';
 
                 const data = {
                     refTag: ref.tag, refLocation: ref.loc, refDept: ref.dept, refType: ref.type,
@@ -8563,7 +9009,7 @@ function smartConfirm(message, opts) {
                     workDate: workDateInput.value, workDateISO: workDateInput.value,
                     generatedAt: ts,
                     inchargeName: iname,
-                    checklistType: isAC ? 'ac' : (isFridge ? 'fridge' : 'none')
+                    checklistType: isAC ? 'ac' : (isFridge ? 'fridge' : (isBio ? 'biomedical' : 'none'))
                 };
 
                 if (isAC) {
@@ -8578,7 +9024,12 @@ function smartConfirm(message, opts) {
                     data.drainageItems = getTickedACItems(11, 15).join('|');
                     data.drainageRemarks = document.getElementById('remarkDrainage').value.trim() || '—';
                     data.drainageRating = (document.querySelector('input[name="ratingDrainage"]:checked') || {}).value || '—';
-                } else if (isFridge) {
+                } else if (isBio) {
+    const _items = window.__bioCurrentItems || [];
+    if (!_items.length) { alert('⚠️ No checklist is defined for this equipment type yet.'); return null; }
+    data.bioItemTexts = _items.slice();   // snapshot, so old PM cards never change
+    data.bioItems = _items.map((t, i) => i + 1).filter(n => { const cb = document.getElementById('bio_check' + n); return cb && cb.checked; }).join('|');
+} else if (isFridge) {
                     // Only collect visible items (Freezer/Fridge split)
                     const tItems = [];
                     if (document.getElementById('check6').closest('.check-item').style.display !== 'none') tItems.push('6');
@@ -8603,6 +9054,22 @@ function smartConfirm(message, opts) {
             signOffBtn.addEventListener('click', async function () {
                 const data = collectFormData();
                 if (!data) return;
+                const _ref = REF_FILTERED[refSelect.value];
+                {
+                    let ticked = 0, total = 0;
+                    if (data.checklistType === 'fridge') {
+                        ticked = [data.cleanItems, data.tempItems, data.doorItems].reduce((n, s) => n + safeSplit(s, '|').length, 0);
+                        total = 5 + ((isFreezerType(data.refType) || isFridgeOnlyType(data.refType)) ? 4 : 5) + 5;
+                    } else if (data.checklistType === 'ac') {
+                        ticked = [data.airflowItems, data.electricalItems, data.drainageItems].reduce((n, s) => n + safeSplit(s, '|').length, 0);
+                        total = 15;
+                    } else if (data.checklistType === 'biomedical') {
+                        ticked = safeSplit(data.bioItems, '|').length; total = (data.bioItemTexts || []).length;
+                    }
+                    if (total && ticked < total &&
+                        !await smartConfirm(`Only ${ticked} of ${total} checklist items are ticked. Sign off anyway?`,
+                            { title: '⚠️ Incomplete checklist', icon: '⚠️', okText: 'Sign off anyway', danger: false })) return;
+                }
                 try {
                     await ensureReportHash(data);
                 } catch (error) {
@@ -8640,14 +9107,29 @@ function smartConfirm(message, opts) {
                         localStorage.setItem(key, data.inchargeName || '');
                     } catch (e) {}
                     clearRefDraft();
-                    setTimeout(() => resetForm(false), 1500);
+                    createNotification({
+    recipient: data.inchargeName, type: 'pm_submitted',
+    title: '📝 PM awaiting your co-signature — ' + data.refTag,
+    message: `${data.technician} signed off a PM at ${data.refLocation}.`,
+    relatedTag: data.refTag, relatedDept: data.refDept
+}).catch(() => { });
+if (_ref && _ref._docId) {
+    const _nd = getNextPmDateByType_(_ref.type, data.workDate);
+    window.FB.updateDoc(window.FB.doc(window.FB.db, 'equipment', _ref._docId), {
+        lastPmDate: data.workDate, nextPmDate: _nd ? toIsoDate_(_nd) : '',
+        updatedAt: window.FB.serverTimestamp()
+    }).then(() => { invalidateCache('equipment'); }).catch(() => { });
+}
+setTimeout(() => resetForm(false), 1500);
                 }
             });
             function resetForm(msg) {
-                document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-                document.querySelectorAll('input[type="text"], input[type="number"]').forEach(i => i.value = '');
-                document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
-                document.querySelectorAll('input[type="radio"][value="good"]').forEach(r => r.checked = true);
+                const _root = document.getElementById('technicianSection');
+_root.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+_root.querySelectorAll('input[type="text"], input[type="number"]').forEach(i => i.value = '');
+_root.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+_root.querySelectorAll('input[type="radio"][value="good"]').forEach(r => r.checked = true);
+window.__ckOwner = '';
                 
                 if (REF_FILTERED.length > 0) refSelect.selectedIndex = 0;
                 refCategoryMode = 'all';
@@ -8758,11 +9240,12 @@ function smartConfirm(message, opts) {
             document.querySelectorAll('input[name^="rating"]').forEach(el => el.addEventListener('change', scheduleDraftSave));
             refSelect.addEventListener('change', scheduleDraftSave);
                         // Category → Type cascade (Add + Edit modals)
-            document.getElementById('newRefCategory')?.addEventListener('change', function () {
-                populateTypeSelect(document.getElementById('newRefType'), this.value);
+            document.getElementById('newRefCategory')?.addEventListener('change', async function () {
+                await populateTypeSelect(document.getElementById('newRefType'), this.value);
+                refreshBioChecklistBlock(true);
             });
-            document.getElementById('editRefCategory')?.addEventListener('change', function () {
-                populateTypeSelect(document.getElementById('editRefType'), this.value);
+            document.getElementById('editRefCategory')?.addEventListener('change', async function () {
+                await populateTypeSelect(document.getElementById('editRefType'), this.value);
             });
 
             /* ============================================================
@@ -8783,20 +9266,20 @@ function smartConfirm(message, opts) {
                 }
             }
             function applyRoleVisibility() {
-                const isIC = currentRole === 'incharge';
-                const isSup = currentRole === 'supervisor';
-                const isAM = currentRole === 'assetsmanager';
-                const isIM = currentRole === 'infra_manager';
-                const isBio = currentRole === 'head_biomedical';
-                const hasBackOffice = isIC || isSup || isAM || isIM || isBio;
-                
-                document.getElementById('technicianSection').style.display = hasBackOffice ? 'none' : 'block';
+                const isIC  = currentRole === 'incharge'        || userHasPermission('incharge');
+                const isSup = currentRole === 'supervisor'      || userHasPermission('supervisor');
+                const isAM  = currentRole === 'assetsmanager'   || userHasPermission('assetsmanager');
+                const isIM  = currentRole === 'infra_manager'   || userHasPermission('infra_manager');
+                const isBio = currentRole === 'head_biomedical' || userHasPermission('head_biomedical');
+                const isTech = currentRole === 'technician'     || userHasPermission('technician');
+
+                document.getElementById('technicianSection').style.display = isTech ? 'block' : 'none';
                 document.getElementById('inchargeSection').style.display = (isIC || isBio) ? 'block' : 'none';
                 document.getElementById('supervisorSection').style.display = (isSup || isBio || isIM) ? 'block' : 'none';
                 document.getElementById('assetsManagerSection').style.display = isAM ? 'block' : 'none';
                 document.getElementById('infraManagerSection').style.display = isIM ? 'block' : 'none';
-                document.getElementById('technicianActionButtons').style.display = hasBackOffice ? 'none' : 'flex';
-                document.getElementById('workdateTag').style.display = hasBackOffice ? 'none' : 'flex';
+                document.getElementById('technicianActionButtons').style.display = isTech ? 'flex' : 'none';
+                document.getElementById('workdateTag').style.display = isTech ? 'flex' : 'none';
                 
                 if (isBio) {
                     currentInchargeDept = BIOMEDICAL_DEPT_NAME;
@@ -8815,7 +9298,24 @@ function smartConfirm(message, opts) {
                 
                 closeNotifPanel();
                 
-                const icTaskCard = document.getElementById('icMyTasksCard');
+                configureCategoryUI();
+document.querySelectorAll('#supervisorSection > .card').forEach(card => {
+    const h = card.querySelector('.card-header')?.textContent || '';
+    if (/Manage In-Charges|Manage Technicians|Broadcast Alert/.test(h)) card.style.display = isSup ? '' : 'none';
+    if (card.id === 'supPerfCard') card.style.display = isIM ? 'none' : '';
+});
+
+/* Biomedical head: hide the fridge/freezer overview cards (not needed) */
+['supFleetOverviewDept', 'supInvTitle'].forEach(id => {
+    const card = document.getElementById(id)?.closest('.card');
+    if (card) card.style.display = (currentRole === 'head_biomedical') ? 'none' : '';
+});
+/* Also hide the Fridge PMs / AC PMs tiles in the analytics dashboard */
+['dashKpiFridgePms', 'dashKpiAcPms'].forEach(id => {
+    const tile = document.getElementById(id)?.closest('.kpi-mini');
+    if (tile) tile.style.display = (currentRole === 'head_biomedical') ? 'none' : '';
+});
+const icTaskCard = document.getElementById('icMyTasksCard');
                 if (icTaskCard) {
                     if (isIC && normalizeText(currentLoggedInName) !== normalizeText(SUPERVISOR_NAME)) {
                         icTaskCard.style.display = 'none';
@@ -8882,7 +9382,7 @@ function smartConfirm(message, opts) {
                 if (isIC || isSup) {
                     setTimeout(() => refreshMyTasksForRole(isIC ? 'incharge' : 'supervisor'), 800);
                 }
-                if (currentRole === 'technician') {
+                if (isTech) {
                     setTimeout(() => refreshTechnicianCurative(), 800);
                     setTimeout(() => refreshMyTasksForRole('technician'), 900);
                 }
@@ -9080,56 +9580,6 @@ function smartConfirm(message, opts) {
             }
 
 
-            async function renderBroadcastHistory() {
-                const wrap = document.getElementById('broadcastHistory');
-                if (!wrap) return;
-                wrap.innerHTML = '<div style="text-align:center;color:#9cb9d0;font-style:italic;font-size:.85rem;padding:8px;">⏳ Loading history…</div>';
-                try {
-                    const snap = await window.FB.getDocs(window.FB.collection(window.FB.db, 'broadcasts'));
-                    const list = [];
-                    snap.forEach(doc => {
-                        const d = doc.data() || {};
-                        list.push({
-                            _docId: doc.id,
-                            title: d.title || '',
-                            message: d.message || '',
-                            priority: d.priority || 'info',
-                            sentBy: d.sentBy || '',
-                            sentAt: d.sentAt && d.sentAt.toDate ? d.sentAt.toDate().toISOString() : (d.sentAt || ''),
-                            recipientsCount: d.recipientsCount || 0
-                        });
-                    });
-                    list.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
-
-                    if (!list.length) {
-                        wrap.innerHTML = '<div style="text-align:center;color:#9cb9d0;font-style:italic;font-size:.85rem;padding:8px;">No broadcasts sent yet.</div>';
-                        return;
-                    }
-
-                    const iconMap = { info: '📢', important: '⚠️', urgent: '🚨' };
-                    const colorMap = { info: '#0b3d91', important: '#7a5300', urgent: '#b33a3a' };
-                    const bgMap    = { info: '#eef6fc', important: '#fff9ec', urgent: '#fff5f5' };
-
-                    wrap.innerHTML = '<h3 style="font-size:.9rem;color:#7a5300;margin-bottom:10px;">📋 Recent Broadcasts</h3>' +
-                        list.slice(0, 10).map(b => `
-                            <div style="padding:10px 12px;background:${bgMap[b.priority] || '#fffdf5'};border-left:4px solid ${colorMap[b.priority] || '#f4a300'};border-radius:10px;margin-bottom:8px;font-size:.85rem;">
-                                <div style="font-weight:700;color:${colorMap[b.priority] || '#7a5300'};">
-                                    ${iconMap[b.priority] || '📢'} ${escapeHtml(b.title)}
-                                </div>
-                                <div style="color:#3a6583;margin-top:4px;line-height:1.4;">
-                                    ${escapeHtml(b.message.length > 160 ? b.message.substring(0, 160) + '…' : b.message)}
-                                </div>
-                                <div style="font-size:.72rem;color:#9cb9d0;margin-top:6px;">
-                                    👤 ${escapeHtml(b.sentBy)} · 🕒 ${escapeHtml(timeAgo(b.sentAt))} · 👥 ${b.recipientsCount} recipient(s)
-                                </div>
-                            </div>
-                        `).join('');
-                } catch (e) {
-                    wrap.innerHTML = '<div class="info-error">⚠️ ' + escapeHtml(e.message) + '</div>';
-                }
-            }
-
-
             /* ============================================================
                QR STICKERS
                ============================================================ */
@@ -9208,7 +9658,7 @@ function smartConfirm(message, opts) {
                 const all = await fetchAllInventory();
                 const dept = currentInchargeDept || '';
                 const mine = dept
-                    ? all.filter(a => normalizeText(a.dept) === normalizeText(dept))
+                    ? all.filter(a => normalizeText(a.dept) === normalizeText(dept) && equipVisibleToMe(a))
                     : all;
                 if (!mine.length) { showStatus('⚠️ No refrigerators in your department.', false); return; }
                 const c = document.getElementById('qrModalContent');
@@ -9259,24 +9709,50 @@ function smartConfirm(message, opts) {
                 document.getElementById('infoTitle').textContent = 'Equipment: ' + tag;
                 document.getElementById('infoSubtitle').textContent = 'Loading live data from CHUB cloud…';
                 loadRefInfo(tag);
-                window.__reloadRefInfo = () => loadRefInfo(tag);
+                window.__reloadRefInfo = () => loadRefInfo(tag, 0);
                 return true;
             }
-            async function loadRefInfo(tag) {
-                if (!window.FB || !window.FB.ready) {
-                    await new Promise(r => {
-                        window.addEventListener('firebase-ready', r, { once: true });
-                        setTimeout(r, 5000);
-                    });
-                }
+            async function loadRefInfo(tag, retryCount) {
+                retryCount = retryCount || 0;
+
                 const body = document.getElementById('infoBody');
                 const subtitle = document.getElementById('infoSubtitle');
-                const badge = document.getElementById('infoBadge');
-                body.innerHTML = '<div class="info-loading">⏳ Fetching latest PM data…</div>';
+
+                // Show the loading state (keeps changing on retries so the user sees progress)
+                if (retryCount === 0) {
+                    subtitle.textContent = 'Loading live data from CHUB cloud…';
+                    body.innerHTML = '<div class="info-loading">⏳ Fetching latest PM data…</div>';
+                } else {
+                    subtitle.textContent = 'Reconnecting to CHUB cloud…';
+                    body.innerHTML = `<div class="info-loading">⏳ Reconnecting… (attempt ${retryCount + 1})</div>`;
+                }
+
+                // Wait for Firebase — but don't give up after 5s.
+                // Wait up to 15s per attempt; if still not ready, loop will retry.
+                if (!window.FB || !window.FB.ready) {
+                    await new Promise(r => {
+                        if (window.FB && window.FB.ready) return r();
+                        let done = false;
+                        const finish = () => { if (done) return; done = true; r(); };
+                        window.addEventListener('firebase-ready', finish, { once: true });
+                        setTimeout(finish, 15000);
+                    });
+                }
+
                 const res = await fetchRefInfoFromCloud(tag);
                 if (!res || !res.ok) {
-                    body.innerHTML = '<div class="info-error">⚠️ Could not load data.</div>';
-                    subtitle.textContent = 'Connection error.';
+                    // Auto-retry up to 3 more times (total 4 attempts ≈ up to ~60s on slow networks)
+                    if (retryCount < 3) {
+                        setTimeout(() => loadRefInfo(tag, retryCount + 1), 1500);
+                        return;
+                    }
+                    // Final fallback after retries exhausted
+                    body.innerHTML = `
+                        <div class="info-error">⚠️ Could not load data.</div>
+                        <div style="text-align:center;margin-top:14px;">
+                            <button onclick="window.__reloadRefInfo()" style="background:#1e4a6d;color:white;border:none;padding:12px 26px;border-radius:40px;font-weight:700;cursor:pointer;font-size:.9rem;">🔄 Try Again</button>
+                        </div>`;
+                    subtitle.textContent = 'Connection error — tap Try Again.';
                     return;
                 }
                 const records = res.records || [];
@@ -9337,7 +9813,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
         <div class="info-card"><h2>📊 Status</h2>
             <div class="info-row"><span class="k">Status</span><span class="v"><span class="info-status-pill ${st}">${labels[st]}</span></span></div>
             <div class="info-row"><span class="k">Last PM</span><span class="v">${formatDateOnly(lw)}</span></div>
-            <div class="info-row"><span class="k">Next PM due</span><span class="v">${nd ? formatDateOnly(nd.toISOString().slice(0, 10)) : '—'}</span></div>
+            <div class="info-row"><span class="k">Next PM due</span><span class="v">${nd ? formatDateOnly(toIsoDate_(nd)) : '—'}</span></div>
             <div class="info-row"><span class="k">Days remaining</span><span class="v">${du < 0 ? 'Overdue by ' + Math.abs(du) + ' days' : du + ' days'}</span></div>
         </div>
         <div class="info-card"><h2>🧊 Equipment</h2>
@@ -9368,13 +9844,13 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     const t = new Date();
                     const p = new Date();
                     p.setDate(t.getDate() - 90);
-                    const fmt = d => d.toISOString().slice(0, 10);
+                    const fmt = d => toIsoDate_(d);
                     toI.value = fmt(t);
                     fromI.value = fmt(p);
                 }
                 const setQ = days => {
                     const t = new Date();
-                    const fmt = d => d.toISOString().slice(0, 10);
+                    const fmt = d => toIsoDate_(d);
                     toI.value = fmt(t);
                     if (days === 'all') fromI.value = '2026-07-03';
                     else { const p = new Date(); p.setDate(t.getDate() - days); fromI.value = fmt(p); }
@@ -9465,9 +9941,16 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const sealed = safeStr(rec.signatureSubject || '');
                 let h = '';
                 const _pmEquipName = safeStr(rec['Equipment Name'] || rec.refEquipName || '');
-                h += `<div class="info-card"><h2>🧊 Equipment</h2>${jcRow('Tag', escapeHtml(tag))}${jcRow('Equipment Name', escapeHtml(_pmEquipName || '—'))}${jcRow('Type', escapeHtml(type))}${jcRow('Brand', escapeHtml(brand))}${jcRow('Model', escapeHtml(model))}${jcRow('Serial Number', escapeHtml((serial && serial.toUpperCase() !== 'N/A') ? serial : '—'))}${jcRow('Department', escapeHtml(dept))}${jcRow('Location', escapeHtml(loc))}${jcRow('Working', wsBadge)}</div>`;
+                h += `<div class="info-card"><h2>🧊 Equipment</h2>${jcRow('Equipment Name', escapeHtml(_pmEquipName || '—'))}${jcRow('Tag', escapeHtml(tag))}${jcRow('Type', escapeHtml(type))}${jcRow('Brand', escapeHtml(brand))}${jcRow('Model', escapeHtml(model))}${jcRow('Serial Number', escapeHtml((serial && serial.toUpperCase() !== 'N/A') ? serial : '—'))}${jcRow('Department', escapeHtml(dept))}${jcRow('Location', escapeHtml(loc))}${jcRow('Working', wsBadge)}</div>`;
                 h += `<div class="info-card"><h2>📅 Summary</h2>${jcRow('Work date', formatDateOnly(wd))}${jcRow('Next PM', nextPmForPDF(wd, type))}${jcRow('Technician', escapeHtml(tech))}${jcRow('Recorded at', escapeHtml(ts))}${jcRow('Report ID', escapeHtml(reportId))}${jcRow('Report hash', `<span style="font-size:.72rem;font-family:monospace;">${escapeHtml(hash)}</span>`)}</div>`;
                 const checklistType = rec.checklistType || 'fridge';
+if (checklistType === 'biomedical') {
+    const _bt = Array.isArray(rec.bioItemTexts) ? rec.bioItemTexts : [];
+    const _bs = new Set(safeSplit(rec.bioItems, '|'));
+    const _bd = _bt.filter((t, i) => _bs.has(String(i + 1))).length;
+    h += `<div class="info-card"><h2>🏥 PM Checklist <span class="jc-count">${_bd}/${_bt.length} done</span></h2>` +
+        _bt.map((t, i) => { const ok = _bs.has(String(i + 1)); return `<div class="jc-item ${ok ? 'ok' : 'bad'}"><span class="jc-icon">${ok ? '✅' : '❌'}</span><span>${escapeHtml(t)}</span></div>`; }).join('') + `</div>`;
+}
                 if (checklistType === 'ac') {
                     h += jcChecklistSection('🌬️', 'Filters, Coils & Airflow', AC_AIRFLOW_TEXTS, rec.airflowItems || rec['Airflow Items'], 1, rec.airflowRating || rec['Airflow Rating'], AC_AIRFLOW_RATINGS, rec.airflowRemarks || rec['Airflow Remarks']);
                     h += jcChecklistSection('⚡', 'Electrical & Refrigerant', AC_ELECTRICAL_TEXTS, rec.electricalItems || rec['Electrical Items'], 6, rec.electricalRating || rec['Electrical Rating'], AC_ELECTRICAL_RATINGS, rec.electricalRemarks || rec['Electrical Remarks']);
@@ -9512,7 +9995,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             function renderJobCardReviewSection(rec) {
                 const s = document.getElementById('jobCardReviewSection');
                 const ta = document.getElementById('jobCardComment');
-                if (currentRole !== 'incharge') { s.style.display = 'none'; return; }
+                if (currentRole !== 'incharge' && currentRole !== 'head_biomedical') { s.style.display = 'none'; return; }
                 if (safeStr(rec['In-Charge Signed At'] || rec.inchargeSignedAt).trim()) {
                     s.style.display = 'none';
                     return;
@@ -9621,7 +10104,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             });
 
             async function refreshPendingApprovals() {
-                if (currentRole !== 'incharge') return;
+                if (!hasRole('incharge') && !hasRole('head_biomedical')) return;
                 renderSkeletons(pendingApprovalsList, 3, 'row');
                 try {
                     const records = await fetchAllLogs();
@@ -9784,7 +10267,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 if (recs.length) {
                     const last = safeStr(recs[0]['Work Date'] || recs[0].workDate);
                     const nd = getNextPmDateByType_(ref.type || 'Fridge', last);
-                    const ds = nd ? nd.toISOString().slice(0, 10) : '';
+                    const ds = nd ? toIsoDate_(nd) : '';
                     const du = nd ? Math.round((nd - now) / 86400000) : 9999;
                     let st;
                     if (du < 0) st = 'overdue';
@@ -9832,7 +10315,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 }
                 const allInv = await fetchAllInventory();
                 const records = await fetchAllLogs();
-                const mine = allInv.filter(a => normalizeText(a.dept) === normalizeText(dept));
+                const mine = allInv.filter(a => normalizeText(a.dept) === normalizeText(dept) && equipVisibleToMe(a));
                 if (!mine.length) {
                     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#5b7b96;padding:14px;">No equipment under ' + dept + '.</td></tr>';
                     return;
@@ -9853,7 +10336,8 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         : '<span class="status-badge working">✅ Working</span>';
                     const owner = getInventoryOwner(ref) || '—';
                     return `<tr>
-            <td><strong>${escapeHtml(ref.tag)}</strong>${ref.equipName ? '<br><span style="font-size:.78rem;color:#5b7b96;">' + escapeHtml(ref.equipName) + '</span>' : ''}</td>
+            <td><strong>${escapeHtml(ref.tag)}</strong></td>
+            <td>${escapeHtml(ref.equipName || '—')}</td>
             <td>${escapeHtml(ref.loc)}</td>
             <td>${escapeHtml((ref.brand || '') + ' ' + (ref.model || ''))}</td>
             <td>${wb}</td>
@@ -9936,13 +10420,13 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 list.forEach((ref, i) => {
                     const o = document.createElement('option');
                     o.value = String(i);
-                    o.textContent = `${ref.tag} | ${ref.loc} | ${ref.brand} ${ref.model}`;
+                    o.textContent = `${ref.equipName ? ref.equipName + ' — ' : ''}${ref.tag} | ${ref.loc} | ${ref.brand} ${ref.model}`;
                     eqPmEquipSelect.appendChild(o);
                 });
             }
             function setEqPmQuickRange(w) {
                 const t = new Date();
-                const fmt = d => d.toISOString().slice(0, 10);
+                const fmt = d => toIsoDate_(d);
                 eqPmTo.value = fmt(t);
                 if (w === 'all') { eqPmFrom.value = '2026-07-03'; return; }
                 const p = new Date();
@@ -10013,7 +10497,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             let eqPmHistoryRecords = [];
             function setEqPmHisQuickRange(w) {
                 const t = new Date();
-                const fmt = d => d.toISOString().slice(0, 10);
+                const fmt = d => toIsoDate_(d);
                 document.getElementById('eqPmHisTo').value = fmt(t);
                 if (w === 'all') { document.getElementById('eqPmHisFrom').value = '2026-07-03'; return; }
                 const p = new Date();
@@ -10131,31 +10615,24 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                SUPERVISOR: SELECTORS + EDITORS
                ============================================================ */
             function populateSupervisorDeptFilter() {
-                // 🔒 Update the Fleet Overview title dynamically
                 const fleetTitle = document.getElementById('supFleetOverviewDept');
                 if (fleetTitle) {
-                    if (currentRole === 'supervisor') fleetTitle.textContent = INFRA_DEPT_NAME;
-                    else if (currentRole === 'head_biomedical') fleetTitle.textContent = BIOMEDICAL_DEPT_NAME;
+                    if (currentRole === 'head_biomedical') fleetTitle.textContent = BIOMEDICAL_DEPT_NAME;
                     else fleetTitle.textContent = 'All Departments';
                 }
 
-                // 🔒 Update the Table Title dynamically
                 const invTitle = document.getElementById('supInvTitle');
                 if (invTitle) {
-                    if (currentRole === 'supervisor') invTitle.textContent = INFRA_DEPT_NAME + ' Refrigerators & Freezers';
-                    else if (currentRole === 'head_biomedical') invTitle.textContent = BIOMEDICAL_DEPT_NAME + ' Refrigerators & Freezers';
+                    if (currentRole === 'head_biomedical') invTitle.textContent = BIOMEDICAL_DEPT_NAME + ' Refrigerators & Freezers';
                     else invTitle.textContent = 'All Refrigerators & Freezers';
                 }
 
                 const sel = document.getElementById('supervisorDeptFilter');
                 const sel2 = document.getElementById('supervisorAnalysisDept');
                 if (sel) {
-                    const c = sel.value || (currentRole === 'supervisor' ? INFRA_DEPT_NAME : (currentRole === 'head_biomedical' ? BIOMEDICAL_DEPT_NAME : 'all'));
+                    const c = sel.value || (currentRole === 'head_biomedical' ? BIOMEDICAL_DEPT_NAME : 'all');
                     sel.innerHTML = '';
-                    if (currentRole === 'supervisor') {
-                        const o = document.createElement('option'); o.value = INFRA_DEPT_NAME; o.textContent = INFRA_DEPT_NAME;
-                        sel.appendChild(o);
-                    } else if (currentRole === 'head_biomedical') {
+                    if (currentRole === 'head_biomedical') {
                         const o = document.createElement('option'); o.value = BIOMEDICAL_DEPT_NAME; o.textContent = BIOMEDICAL_DEPT_NAME;
                         sel.appendChild(o);
                     } else {
@@ -10168,12 +10645,9 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     sel.value = c;
                 }
                 if (sel2) {
-                    const c2 = sel2.value || (currentRole === 'supervisor' ? INFRA_DEPT_NAME : (currentRole === 'head_biomedical' ? BIOMEDICAL_DEPT_NAME : ''));
+                    const c2 = sel2.value || (currentRole === 'head_biomedical' ? BIOMEDICAL_DEPT_NAME : '');
                     sel2.innerHTML = '';
-                    if (currentRole === 'supervisor') {
-                        const o = document.createElement('option'); o.value = INFRA_DEPT_NAME; o.textContent = INFRA_DEPT_NAME;
-                        sel2.appendChild(o);
-                    } else if (currentRole === 'head_biomedical') {
+                    if (currentRole === 'head_biomedical') {
                         const o = document.createElement('option'); o.value = BIOMEDICAL_DEPT_NAME; o.textContent = BIOMEDICAL_DEPT_NAME;
                         sel2.appendChild(o);
                     } else {
@@ -10189,12 +10663,9 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             function populateDashDeptSelect() {
                 const sel = document.getElementById('dashDeptSelect');
                 if (!sel) return;
-                const c = sel.value || (currentRole === 'supervisor' ? INFRA_DEPT_NAME : 'all');
+                const c = sel.value || 'all';
                 sel.innerHTML = '';
-                if (currentRole === 'supervisor') {
-                    const o = document.createElement('option'); o.value = INFRA_DEPT_NAME; o.textContent = INFRA_DEPT_NAME;
-                    sel.appendChild(o);
-                } else if (currentRole === 'head_biomedical') {
+                if (currentRole === 'head_biomedical') {
                     const o = document.createElement('option'); o.value = BIOMEDICAL_DEPT_NAME; o.textContent = BIOMEDICAL_DEPT_NAME;
                     sel.appendChild(o);
                 } else {
@@ -10209,12 +10680,9 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             function populateCurativeDeptSelect() {
                 const sel = document.getElementById('curativeDeptFilter');
                 if (!sel) return;
-                const c = sel.value || (currentRole === 'supervisor' ? INFRA_DEPT_NAME : 'all');
+                const c = sel.value || 'all';
                 sel.innerHTML = '';
-                if (currentRole === 'supervisor') {
-                    const o = document.createElement('option'); o.value = INFRA_DEPT_NAME; o.textContent = INFRA_DEPT_NAME;
-                    sel.appendChild(o);
-                } else if (currentRole === 'head_biomedical') {
+                if (currentRole === 'head_biomedical') {
                     const o = document.createElement('option'); o.value = BIOMEDICAL_DEPT_NAME; o.textContent = BIOMEDICAL_DEPT_NAME;
                     sel.appendChild(o);
                 } else {
@@ -10241,17 +10709,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     });
                 sel.value = c;
             }
-            function populateCurativeDeptSelect() {
-                const sel = document.getElementById('curativeDeptFilter');
-                if (!sel) return;
-                const c = sel.value || 'all';
-                sel.innerHTML = '<option value="all">All Departments</option>';
-                Object.keys(DEPARTMENTS).forEach(d => {
-                    const o = document.createElement('option'); o.value = d; o.textContent = d;
-                    sel.appendChild(o);
-                });
-                sel.value = c;
-            }
+
             async function populateCurativeTechSelect() {
                 const sel = document.getElementById('curativeTechFilter');
                 if (!sel) return;
@@ -10285,7 +10743,18 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const users = await loadUsersFromFirestore();
                 const ic = {};
                 Object.keys(users).forEach(n => {
-                    if (users[n].role === 'incharge') ic[n] = { pin: users[n].pin || '', dept: users[n].dept || '', totpEnabled: users[n].totpEnabled };
+                    const u = users[n];
+                    if (userRecHasPermission(u, 'incharge') || userRecHasPermission(u, 'head_biomedical')) {
+                        ic[n] = {
+                            pin: u.pin || '',
+                            dept: u.dept || '',
+                            role: u.role,
+                            permissions: u.permissions || null,
+                            totpEnabled: u.totpEnabled,
+                            pinChangedAt: u.pinChangedAt || '',
+                            pinChangedBy: u.pinChangedBy || ''
+                        };
+                    }
                 });
                 wrap.innerHTML = '';
                 const names = Object.keys(ic).sort();
@@ -10309,7 +10778,29 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
         </div><div>
             <label style="font-size:.75rem;color:#5b7b96;font-weight:700;">DEPARTMENT</label>
             <select class="incharge-dept-input" style="width:100%;"><option value="">— choose —</option></select>
+            ${(() => {
+                const p = r.permissions || {
+                    technician: r.role === 'technician',
+                    incharge: r.role === 'incharge',
+                    assetsmanager: r.role === 'assetsmanager',
+                    infra_manager: r.role === 'infra_manager',
+                    head_biomedical: r.role === 'head_biomedical',
+                    supervisor: r.role === 'supervisor'
+                };
+                return `<div style="margin-top:10px;">
+                    <div style="font-size:.72rem;color:#5b7b96;font-weight:700;margin-bottom:6px;">ROLE PERMISSIONS</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="technician" ${p.technician ? 'checked' : ''}> 👨‍🔧 Technician</label>
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="incharge" ${p.incharge ? 'checked' : ''}> 👔 In-Charge</label>
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="assetsmanager" ${p.assetsmanager ? 'checked' : ''}> 🗑️ Assets Manager</label>
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="infra_manager" ${p.infra_manager ? 'checked' : ''}> 🏗️ Infra Manager</label>
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="head_biomedical" ${p.head_biomedical ? 'checked' : ''}> 🏥 Head Biomedical</label>
+                        <label class="perm-chip"><input type="checkbox" class="ic-perm-input" data-perm="supervisor" ${p.supervisor ? 'checked' : ''}> 👑 Supervisor</label>
+                    </div>
+                </div>`;
+            })()}
         </div><div class="actions">
+            <button type="button" data-reset-pin="${escapeHtml(name)}" style="padding:8px 12px;font-size:.8rem;background:#7a4c9c;color:white;border:none;border-radius:40px;cursor:pointer;margin-right:4px;">🔑 Reset PIN</button>
             <button type="button" class="btn-warning" data-disable-2fa="${escapeHtml(name)}" style="padding:8px 12px;font-size:.8rem;background:#f4a300;color:white;border:none;border-radius:40px;cursor:pointer;margin-right:4px;">🔓 Disable 2FA</button>
             <button type="button" class="btn-danger" data-del-incharge="${escapeHtml(name)}">🗑️</button>
         </div>`;
@@ -10368,10 +10859,15 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     const name = (row.querySelector('.incharge-name-input').value || '').trim();
                     const pin = (row.querySelector('.incharge-pin-input').value || '').trim();
                     const dept = (row.querySelector('.incharge-dept-input').value || '').trim();
+                    const perms = {};
+                    row.querySelectorAll('.ic-perm-input').forEach(cb => {
+                        perms[cb.getAttribute('data-perm')] = cb.checked;
+                    });
+                    if (!Object.values(perms).some(v => v === true)) perms.incharge = true;
                     if (!name) return;
-                    if (!pin || !/^\d{4,8}$/.test(pin)) { err = 'PIN required (4-8 digits) for ' + name; return; }
+                    if (pin && !/^\d{4,8}$/.test(pin)) { err = 'PIN must be 4-8 digits for ' + name; return; }
                     if (next[name]) { err = 'Duplicate: ' + name; return; }
-                    next[name] = { pin, dept };
+                    next[name] = { pin, dept, permissions: perms };
                 });
                 if (err) { alert(err); return; }
                 this.disabled = true;
@@ -10386,9 +10882,10 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         const pinChanged = prevPin !== newPin;
                         const update = {
                             name: n,
-                            role: 'incharge',
+                            role: computePrimaryRoleFromPerms(r.permissions),
                             pin: newPin,
                             dept: String(r.dept || ''),
+                            permissions: r.permissions,
                             updatedAt: window.FB.serverTimestamp()
                         };
                         if (pinChanged) {
@@ -10416,14 +10913,17 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const users = await loadUsersFromFirestore();
                 const techs = {};
                 Object.keys(users).forEach(n => {
-                    if (users[n].role === 'technician' || users[n].role === 'supervisor' || users[n].role === 'assetsmanager' || users[n].role === 'infra_manager') {
+                    const u = users[n];
+                    if (userRecHasPermission(u, 'technician') || userRecHasPermission(u, 'supervisor') ||
+                        userRecHasPermission(u, 'assetsmanager') || userRecHasPermission(u, 'infra_manager')) {
                         techs[n] = {
-                            role: users[n].role,
-                            pin: users[n].pin || '',
-                            phone: users[n].phone || '',
-                            email: users[n].email || '',
-                            pinChangedAt: users[n].pinChangedAt || '',
-                            pinChangedBy: users[n].pinChangedBy || ''
+                            role: u.role,
+                            pin: u.pin || '',
+                            phone: u.phone || '',
+                            email: u.email || '',
+                            permissions: u.permissions || null,
+                            pinChangedAt: u.pinChangedAt || '',
+                            pinChangedBy: u.pinChangedBy || ''
                         };
                     }
                 });
@@ -10455,7 +10955,29 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             <input type="tel" class="tech-phone-input" value="${escapeHtml(r.phone)}" style="width:100%;">
             <label style="font-size:.75rem;color:#5b7b96;font-weight:700;margin-top:8px;display:block;">✉️ EMAIL</label>
             <input type="email" class="tech-email-input" value="${escapeHtml(r.email)}" style="width:100%;">
+            ${(() => {
+                const p = r.permissions || {
+                    technician: r.role === 'technician',
+                    incharge: r.role === 'incharge',
+                    assetsmanager: r.role === 'assetsmanager',
+                    infra_manager: r.role === 'infra_manager',
+                    head_biomedical: r.role === 'head_biomedical',
+                    supervisor: r.role === 'supervisor'
+                };
+                return `<div style="margin-top:10px;grid-column:1/-1;">
+                    <div style="font-size:.72rem;color:#5b7b96;font-weight:700;margin-bottom:6px;">ROLE PERMISSIONS</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="technician" ${p.technician ? 'checked' : ''}> 👨‍🔧 Technician</label>
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="incharge" ${p.incharge ? 'checked' : ''}> 👔 In-Charge</label>
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="assetsmanager" ${p.assetsmanager ? 'checked' : ''}> 🗑️ Assets Manager</label>
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="infra_manager" ${p.infra_manager ? 'checked' : ''}> 🏗️ Infra Manager</label>
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="head_biomedical" ${p.head_biomedical ? 'checked' : ''}> 🏥 Head Biomedical</label>
+                        <label class="perm-chip"><input type="checkbox" class="tech-perm-input" data-perm="supervisor" ${p.supervisor ? 'checked' : ''}> 👑 Supervisor</label>
+                    </div>
+                </div>`;
+            })()}
         </div><div class="actions">
+            <button type="button" data-reset-pin="${escapeHtml(name)}" style="padding:8px 12px;font-size:.8rem;background:#7a4c9c;color:white;border:none;border-radius:40px;cursor:pointer;margin-right:4px;">🔑 Reset PIN</button>
             <button type="button" class="btn-warning" data-disable-2fa="${escapeHtml(name)}" style="padding:8px 12px;font-size:.8rem;background:#f4a300;color:white;border:none;border-radius:40px;cursor:pointer;margin-right:4px;">🔓 Disable 2FA</button>
             <button type="button" class="btn-danger" data-del-tech="${escapeHtml(name)}">🗑️</button>
         </div>`;
@@ -10529,10 +11051,15 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     const pin = (row.querySelector('.tech-pin-input').value || '').trim();
                     const phone = (row.querySelector('.tech-phone-input').value || '').trim();
                     const email = (row.querySelector('.tech-email-input').value || '').trim();
+                    const perms = {};
+                    row.querySelectorAll('.tech-perm-input').forEach(cb => {
+                        perms[cb.getAttribute('data-perm')] = cb.checked;
+                    });
+                    if (!Object.values(perms).some(v => v === true)) perms.technician = true;
                     if (!name) return;
                     if (pin && !/^\d{4,8}$/.test(pin)) { err = 'PIN invalid for ' + name; return; }
                     if (email && !/^\S+@\S+\.\S+$/.test(email)) { err = 'Email invalid for ' + name; return; }
-                    upd.push({ name, pin, phone, email });
+                    upd.push({ name, pin, phone, email, permissions: perms });
                 });
                 if (err) { alert(err); return; }
                 this.disabled = true;
@@ -10548,8 +11075,15 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                             pin: u.pin,
                             phone: u.phone,
                             email: u.email,
+                            permissions: u.permissions,
+                            role: computePrimaryRoleFromPerms(u.permissions),
                             updatedAt: window.FB.serverTimestamp()
                         };
+                        // Safety: don't let the manager remove their own supervisor right
+                        if (u.name === currentLoggedInName && currentRole === 'supervisor') {
+                            update.permissions.supervisor = true;
+                            update.role = 'supervisor';
+                        }
                         if (pinChanged) {
                             update.pinChangedAt = window.FB.serverTimestamp();
                             update.pinChangedBy = currentLoggedInName || 'manager';
@@ -10594,11 +11128,11 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const cnt = document.getElementById('supervisorInvCount');
                 const kpi = document.getElementById('supervisorKpiGrid');
                 if (!tbody) return;
-                tbody.innerHTML = '<tr><td colspan="9" style="padding:0;"><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="padding:0;"><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div></td></tr>';
                 const inv = await fetchAllInventory();
                 const records = await fetchAllLogs();
                 if (!inv.length) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#5b7b96;font-style:italic;padding:14px;">No equipment found in the fleet.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#5b7b96;font-style:italic;padding:14px;">No equipment found in the fleet.</td></tr>';
                     if (cnt) cnt.textContent = '0 / 0';
                     if (kpi) kpi.innerHTML = '<div class="kpi-card" style="background:#eef6fc;"><div class="kpi-label">TOTAL</div><div class="kpi-value" style="color:#0b3d91;">0</div></div>';
                     return;
@@ -10609,7 +11143,6 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 // 🔒 Strict Department Separation - MUST HAPPEN FIRST
                 let dF = document.getElementById('supervisorDeptFilter')?.value || 'all';
                 if (currentRole === 'head_biomedical') dF = BIOMEDICAL_DEPT_NAME;
-                else if (currentRole === 'supervisor') dF = INFRA_DEPT_NAME;
                 else if (currentRole === 'infra_manager') dF = 'all';
 
                 const excludeBio = currentRole === 'supervisor'; 
@@ -10642,7 +11175,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     .filter(r => supervisorOwnerFilter === 'all' || normalizeText(getInventoryOwner(r.ref)) === normalizeText(supervisorOwnerFilter));
                 cnt.textContent = rows.length + ' / ' + all.length;
                 if (!rows.length) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#5b7b96;padding:14px;">No matches.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#5b7b96;padding:14px;">No matches.</td></tr>';
                     return;
                 }
                 const lbl = { maintained: '✅ Maintained', pending: '⏳ Pending', overdue: '🚨 Overdue', never: '⚪ Never' };
@@ -10652,6 +11185,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     const wb = ws === 'Not Working' ? '<span class="status-badge not-working">⛔</span>' : '<span class="status-badge working">✅</span>';
                     return `<tr>
             <td><strong>${escapeHtml(ref.tag)}</strong></td>
+            <td>${escapeHtml(ref.equipName || '—')}</td>
             <td>${escapeHtml(ref.dept)}</td>
             <td>${escapeHtml(ref.loc)}</td>
             <td>${escapeHtml((ref.brand || '') + ' ' + (ref.model || ''))}</td>
@@ -10752,8 +11286,8 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     borderRadius: 6,
                     maxBarThickness: 34
                 }));
-                const wc = finv.filter(a => (a.workingStatus || 'Working') === 'Working').length;
-                const nwc = finv.filter(a => (a.workingStatus || 'Working') === 'Not Working').length;
+                const wc = finv.filter(a => (a.workingStatus || 'Working') === 'Working').length || 0;
+                const nwc = finv.filter(a => (a.workingStatus || 'Working') === 'Not Working').length || 0;
                 const ol = months.map(mk => {
                     const [y, m] = mk.split('-').map(Number);
                     const me = new Date(y, m, 0, 23, 59, 59);
@@ -10793,7 +11327,9 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     if ((ref.workingStatus || 'Working') === 'Not Working') sc += 3;
                     ml.forEach(r => {
     const isACRec = r.checklistType === 'ac';
-    if (isACRec) {
+    if (r.checklistType === 'biomedical') {
+    /* no fridge scoring for biomedical records */
+} else if (isACRec) {
         const ar = safeStr(r.airflowRating || r['Airflow Rating']);
         const er = safeStr(r.electricalRating || r['Electrical Rating']);
         const dr = safeStr(r.drainageRating || r['Drainage Rating']);
@@ -10866,12 +11402,15 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const ctx = document.getElementById('chartWorkingPie');
                 if (!ctx) return;
                 if (dashCharts.workingPie) { try { dashCharts.workingPie.destroy(); } catch (e) { } dashCharts.workingPie = null; }
-                const t = p.working + p.notWorking;
-                if (!t) { ctx.parentElement.innerHTML = '<div class="dash-empty">📭 No equipment.</div>'; return; }
+                const wVal = parseInt(p.working, 10) || 0;
+                const nVal = parseInt(p.notWorking, 10) || 0;
+                const t = wVal + nVal;
+                if (t === 0) { ctx.parentElement.innerHTML = '<div class="dash-empty">📭 No equipment.</div>'; return; }
+                
                 if (typeof Chart === 'undefined') return;
                 dashCharts.workingPie = new Chart(ctx, {
                     type: 'doughnut',
-                    data: { labels: ['✅ Working', '⛔ Not Working'], datasets: [{ data: [p.working, p.notWorking], backgroundColor: ['#1b6b3f', '#b33a3a'], borderColor: '#fff', borderWidth: 3, hoverOffset: 10 }] },
+                    data: { labels: ['✅ Working', '⛔ Not Working'], datasets: [{ data: [wVal, nVal], backgroundColor: ['#1b6b3f', '#b33a3a'], borderColor: '#fff', borderWidth: 3, hoverOffset: 10 }] },
                     options: {
                         responsive: true, maintainAspectRatio: false, cutout: '62%',
                         plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 }, padding: 14 } }, tooltip: { backgroundColor: '#0b3d91', callbacks: { label: c => c.label + ': ' + c.parsed + ' (' + Math.round((c.parsed / t) * 100) + '%)' } } }
@@ -10915,11 +11454,10 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 }).join('');
             }
             async function renderSupervisorDashboard() {
-                if (currentRole !== 'supervisor' && currentRole !== 'head_biomedical' && currentRole !== 'infra_manager') return;
+                if (!hasRole('supervisor') && !hasRole('head_biomedical') && !hasRole('infra_manager')) return;
                 const pm = parseInt(document.getElementById('dashPeriodSelect')?.value || '12', 10);
                 let df = document.getElementById('dashDeptSelect')?.value || 'all';
                 if (currentRole === 'head_biomedical') df = BIOMEDICAL_DEPT_NAME;
-                else if (currentRole === 'supervisor') df = INFRA_DEPT_NAME;
                 else if (currentRole === 'infra_manager') df = 'all';
                 destroyDashCharts();
                 try {
@@ -11015,7 +11553,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 showStatus('🗑️ Cleared.', true);
             }
             function notifIcon(t) {
-                return ({ pm_cosigned: '✅', pm_rejected: '❌', curative_request: '🚨', curative_started: '🔧', curative_completed: '📸', curative_verified: '🎉', curative_rejected: '↩️', curative_escalated: '⚠️', curative_reassigned: '🔁', disposal_requested: '🗑️', disposal_incharge_approved: '👔', disposal_am_approved: '✅', disposal_rejected: '❌', task_assigned: '📋', task_started: '🔧', task_completed: '📸', task_verified: '🎉', task_rejected: '↩️', task_delegated: '🔁', task_escalated: '⚠️', task_delegated_info: 'ℹ️', broadcast_info: '📢', broadcast_important: '⚠️', broadcast_urgent: '🚨' })[t] || '🔔';
+                return ({ pm_cosigned: '✅', pm_rejected: '❌', curative_request: '🚨', curative_started: '🔧', curative_completed: '📸', curative_verified: '🎉', curative_rejected: '↩️', curative_escalated: '⚠️', curative_reassigned: '🔁', disposal_requested: '🗑️', disposal_incharge_approved: '👔', disposal_am_approved: '✅', disposal_rejected: '❌', task_assigned: '📋', task_started: '🔧', task_completed: '📸', task_verified: '🎉', task_rejected: '↩️', task_delegated: '🔁', task_escalated: '⚠️', task_delegated_info: 'ℹ️', pm_submitted: '📝', broadcast_info: '📢', broadcast_important: '⚠️', broadcast_urgent: '🚨' })[t] || '🔔';
             }
             function notifColor(t) {
                 return ({ pm_cosigned: '#1b6b3f', pm_rejected: '#b33a3a', curative_request: '#b33a3a', curative_started: '#1e4a6d', curative_completed: '#0b3d91', curative_verified: '#1b6b3f', curative_rejected: '#b33a3a', curative_escalated: '#b33a3a', curative_reassigned: '#1e4a6d', disposal_requested: '#7a5300', disposal_incharge_approved: '#1b6b3f', disposal_am_approved: '#1b6b3f', disposal_rejected: '#b33a3a' })[t] || '#1e4a6d';
@@ -11080,7 +11618,12 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             }
             async function handleNotificationClick(n) {
                 closeNotifPanel();
-                if (!n) return;
+if (!n) return;
+['pmLogs', 'curative', 'tasks'].forEach(invalidateCache);
+if (n.type === 'pm_submitted') {
+    document.getElementById('pendingApprovalsCard')?.classList.remove('collapsed');
+    refreshPendingApprovals(); scrollToId('pendingApprovalsList'); return;
+}
                 if (n.type === 'pm_rejected' || n.type === 'pm_cosigned') {
                     const logs = await fetchAllLogs();
                     const rec = logs.find(r => r._docId === n.relatedDocId);
@@ -11283,7 +11826,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 return `<div class="curative-card priority-${c.priority} status-${c.status} collapsed">
         <div class="cc-head" title="Click to expand / collapse">
             <div>
-                <div class="cc-tag">🧊 ${escapeHtml(c.tag)}</div>
+                <div class="cc-tag">🧊 ${escapeHtml(c.equipName || c.tag)} <span style="font-size:.8rem;color:#5b7b96;font-weight:600;">(${escapeHtml(c.tag)})</span></div>
                 <div class="cc-loc">${escapeHtml(c.loc || '—')} · ${escapeHtml(c.dept || '—')} · <em>${escapeHtml(c.category || '')}</em></div>
             </div>
             <div style="text-align:right;">
@@ -11675,21 +12218,21 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         }
                         return false;
                     });
-                    const _openCount = mine.filter(c => (c.status === 'pending' || c.status === 'in_progress') && !c.escalated).length;
-                    card.style.display = mine.length > 0 ? 'block' : 'none';
-                    cnt.textContent = _openCount;
+                              card.style.display = mine.length > 0 ? 'block' : 'none';
+            let f = mine;
+            if (TECH_CURATIVE_FILTER === 'open') f = mine.filter(c => (c.status === 'pending' || c.status === 'in_progress' || c.status === 'paused') && !c.escalated);
+            else if (TECH_CURATIVE_FILTER === 'paused') f = mine.filter(c => c.status === 'paused');
+            else if (TECH_CURATIVE_FILTER === 'escalated') f = mine.filter(c => c.escalated && !c.escalationResolved);
+            else if (TECH_CURATIVE_FILTER === 'completed') f = mine.filter(c => c.status === 'completed');
+            else if (TECH_CURATIVE_FILTER === 'verified') f = mine.filter(c => c.status === 'verified');
+            else if (TECH_CURATIVE_FILTER === 'rejected') f = mine.filter(c => c.status === 'rejected');
 
-                    let f = mine;
-                    if (TECH_CURATIVE_FILTER === 'open') f = mine.filter(c => (c.status === 'pending' || c.status === 'in_progress' || c.status === 'paused') && !c.escalated);
-                    else if (TECH_CURATIVE_FILTER === 'paused') f = mine.filter(c => c.status === 'paused');
-                    else if (TECH_CURATIVE_FILTER === 'escalated') f = mine.filter(c => c.escalated && !c.escalationResolved);
-                    else if (TECH_CURATIVE_FILTER === 'completed') f = mine.filter(c => c.status === 'completed');
-                    else if (TECH_CURATIVE_FILTER === 'verified') f = mine.filter(c => c.status === 'verified');
-                    else if (TECH_CURATIVE_FILTER === 'rejected') f = mine.filter(c => c.status === 'rejected');
+            // Always show the total number of jobs assigned to the technician
+            cnt.textContent = mine.length;
 
-                    if (!f.length) {
-                        wrap.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 No jobs in this filter.</div>';
-                    } else {
+            if (!f.length) {
+                wrap.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 No jobs in this filter.</div>';
+            } else {
                         wrap.innerHTML = f.map(c => renderCurativeCard(c, { canStart: true, canComplete: true, canEscalate: true })).join('');
                         bindCurativeButtons(wrap, f, { canStart: true, canComplete: true, canEscalate: true });
                     }
@@ -11706,7 +12249,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const total = ql.length;
                 const ver = ql.filter(c => c.status === 'verified').length;
                 const rej = ql.filter(c => c.status === 'rejected').length;
-                const inp = ql.filter(c => c.status !== 'verified' && c.status !== 'rejected').length;
+                const inp = ql.filter(c => c.status === 'in_progress' || c.status === 'paused' || c.status === 'completed').length;
                 const rate = total > 0 ? Math.round((ver / total) * 100) + '%' : '—';
                 el.innerHTML = `
         <div class="cs-card"><div class="cs-lbl">TOTAL (${escapeHtml(q)})</div><div class="cs-val">${total}</div></div>
@@ -11723,7 +12266,6 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 try {
                     let dF = document.getElementById('curativeDeptFilter')?.value || 'all';
                     if (currentRole === 'head_biomedical') dF = BIOMEDICAL_DEPT_NAME;
-                    else if (currentRole === 'supervisor') dF = INFRA_DEPT_NAME;
                     const tF = document.getElementById('curativeTechFilter')?.value || 'all';
                     const qF = document.getElementById('curativeQuarterFilter')?.value || 'all';
                     let all = await fetchCurativeRequests({ dept: dF, assignedTo: tF, quarterKey: qF });
@@ -11831,12 +12373,12 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 try {
                     const dept = currentInchargeDept || inferDepartmentFromIncharge(currentLoggedInName);
                     const all = await fetchAllInventory();
-                    const mine = all.filter(a => !dept || normalizeText(a.dept) === normalizeText(dept));
+                    const mine = all.filter(a => (!dept || normalizeText(a.dept) === normalizeText(dept)) && equipVisibleToMe(a));
                     select.innerHTML = '<option value="">— Choose equipment —</option>';
                     mine.forEach((ref, i) => {
                         const o = document.createElement('option');
                         o.value = i;
-                        o.textContent = `${ref.tag} | ${ref.loc} | ${ref.brand}`;
+                        o.textContent = `${ref.equipName ? ref.equipName + ' — ' : ''}${ref.tag} | ${ref.loc} | ${ref.brand}`;
                         select.appendChild(o);
                     });
                     select._list = mine;
@@ -12178,8 +12720,8 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     || ((_cBrand + ' ' + _cModel).trim() + (_cType ? ' (' + _cType + ')' : '')).trim()
                     || '(unnamed equipment)';
                 const eqRows = [
-                    ['Tag', safeStr(curative.tag) || '—'],
                     ['Equipment Name', _cEName],
+                    ['Tag', safeStr(curative.tag) || '—'],
                     ['Type', _cType || '—'],
                     ['Brand', _cBrand || '—'],
                     ['Model', _cModel || '—'],
@@ -12396,19 +12938,33 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         const d = doc.data() || {};
                         const r = {
                             _docId: doc.id,
-                            tag: d.tag || '', dept: d.dept || '', loc: d.loc || '',
+                            tag: d.tag || '', equipName: d.equipName || '', dept: d.dept || '', loc: d.loc || '',
                             reason: d.reason || '', condition: d.condition || '',
                             requestedBy: d.requestedBy || '',
                             requestedAt: d.requestedAt && d.requestedAt.toDate ? d.requestedAt.toDate().toISOString() : (d.requestedAt || ''),
-                            inchargeDecision: d.inchargeDecision || '',
-                            inchargeApprovedBy: d.inchargeApprovedBy || '',
-                            inchargeApprovedAt: d.inchargeApprovedAt && d.inchargeApprovedAt.toDate ? d.inchargeApprovedAt.toDate().toISOString() : (d.inchargeApprovedAt || ''),
-                            inchargeComment: d.inchargeComment || '',
+                            // Step 1 — In-Charge of the equipment's location
+                            locationInchargeDecision: d.locationInchargeDecision || d.inchargeDecision || '',
+                            locationInchargeApprovedBy: d.locationInchargeApprovedBy || d.inchargeApprovedBy || '',
+                            locationInchargeApprovedAt: d.locationInchargeApprovedAt && d.locationInchargeApprovedAt.toDate
+                                ? d.locationInchargeApprovedAt.toDate().toISOString()
+                                : (d.locationInchargeApprovedAt || (d.inchargeApprovedAt && d.inchargeApprovedAt.toDate ? d.inchargeApprovedAt.toDate().toISOString() : (d.inchargeApprovedAt || ''))),
+                            locationInchargeComment: d.locationInchargeComment || d.inchargeComment || '',
+                            // Step 2 — In-Charge of the requesting technician (Biomedical / Infrastructure)
+                            techInchargeDecision: d.techInchargeDecision || '',
+                            techInchargeApprovedBy: d.techInchargeApprovedBy || '',
+                            techInchargeApprovedAt: d.techInchargeApprovedAt && d.techInchargeApprovedAt.toDate ? d.techInchargeApprovedAt.toDate().toISOString() : (d.techInchargeApprovedAt || ''),
+                            techInchargeComment: d.techInchargeComment || '',
+                            // Step 3 — Assets Manager (final)
                             amDecision: d.amDecision || '',
                             amApprovedBy: d.amApprovedBy || '',
                             amApprovedAt: d.amApprovedAt && d.amApprovedAt.toDate ? d.amApprovedAt.toDate().toISOString() : (d.amApprovedAt || ''),
                             amComment: d.amComment || '',
-                            status: d.status || 'awaiting_incharge'
+                            // Backward-compat: any legacy `awaiting_incharge` status maps to the first step
+                            status: (d.status === 'awaiting_incharge' ? 'awaiting_location_incharge' : (d.status || 'awaiting_location_incharge')),
+                            // Backward-compat aliases
+                            inchargeDecision: d.locationInchargeDecision || d.inchargeDecision || '',
+                            inchargeApprovedBy: d.locationInchargeApprovedBy || d.inchargeApprovedBy || '',
+                            inchargeComment: d.locationInchargeComment || d.inchargeComment || ''
                         };
                         if (opts.dept && opts.dept !== 'all' && normalizeText(r.dept) !== normalizeText(opts.dept)) return;
                         if (opts.status && opts.status !== 'all' && r.status !== opts.status) return;
@@ -12420,12 +12976,13 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             }
             async function createDisposalRequest(p) {
                 const ref = await window.FB.addDoc(window.FB.collection(window.FB.db, 'disposalRequests'), {
-                    tag: p.tag, dept: p.dept, loc: p.loc,
+                    tag: p.tag, equipName: p.equipName || '', dept: p.dept, loc: p.loc,
                     brand: p.brand || '', model: p.model || '', serial: p.serial || '',
                     reason: p.reason, condition: p.condition,
                     requestedBy: p.requestedBy || currentLoggedInName,
                     requestedAt: window.FB.serverTimestamp(),
-                    status: 'awaiting_incharge'
+                    // Step 1: the In-Charge of the equipment's location approves first.
+                    status: 'awaiting_location_incharge'
                 });
                 return ref.id;
             }
@@ -12441,7 +12998,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
             function openDisposalRequestModal(ref) {
                 const modal = document.getElementById('disposalRequestModal');
                 document.getElementById('disposalRequestSubtitle').textContent =
-                    `Tag: ${ref.tag} · ${ref.loc} · ${ref.dept}`;
+                    `Equipment: ${ref.equipName || '—'} · Tag: ${ref.tag} · ${ref.loc} · ${ref.dept}`;
                 document.getElementById('disposalReason').value = '';
                 document.getElementById('disposalCondition').value = 'Not Working';
                 document.getElementById('disposalRequestError').textContent = '';
@@ -12462,7 +13019,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 btn.innerHTML = '⏳ …';
                 try {
                     const id = await createDisposalRequest({
-                        tag: ref.tag, dept: ref.dept, loc: ref.loc,
+                        tag: ref.tag, equipName: ref.equipName || '', dept: ref.dept, loc: ref.loc,
                         brand: ref.brand, model: ref.model, serial: ref.serial,
                         reason, condition, requestedBy: currentLoggedInName
                     });
@@ -12494,9 +13051,30 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 if (!card || !list) return;
                 const dept = currentInchargeDept || inferDepartmentFromIncharge(currentLoggedInName);
                 if (!dept) { card.style.display = 'none'; return; }
-                const all = await fetchDisposalRequests({ dept: dept });
-                const pending = all.filter(r => r.status === 'awaiting_incharge');
-                const others = all.filter(r => r.status !== 'awaiting_incharge').slice(0, 20);
+                // Pull every disposal request so we can serve both approval steps
+                // (location in-charge AND technician's in-charge) from the same view.
+                let all = await fetchDisposalRequests({});
+                if (CURRENT_DISPOSAL_TIME_FILTER !== 'all') {
+                    const cutoff = Date.now() - (parseInt(CURRENT_DISPOSAL_TIME_FILTER, 10) * 30 * 24 * 60 * 60 * 1000);
+                    all = all.filter(r => new Date(r.requestedAt).getTime() >= cutoff);
+                }
+                const users = await loadUsersFromFirestore();
+
+                const isLocationIncharge = (r) =>
+                    r.status === 'awaiting_location_incharge' &&
+                    normalizeText(r.dept) === normalizeText(dept);
+
+                const isTechIncharge = (r) => {
+                    if (r.status !== 'awaiting_tech_incharge') return false;
+                    const tech = users[r.requestedBy];
+                    if (!tech) return false;
+                    const td = Array.isArray(tech.depts) ? tech.depts : (tech.dept ? [tech.dept] : []);
+                    return td.some(d => normalizeText(d) === normalizeText(dept));
+                };
+
+                const pending = all.filter(r => isLocationIncharge(r) || isTechIncharge(r));
+                const others = all.filter(r => !isLocationIncharge(r) && !isTechIncharge(r)).slice(0, 20);
+
                 cnt.textContent = pending.length;
                 if (all.length === 0) { card.style.display = 'none'; return; }
                 card.style.display = 'block';
@@ -12519,42 +13097,70 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 const el = document.createElement('div');
                 el.className = 'disposal-card';
                 const statusLabel = {
-                    awaiting_incharge: '⏳ Awaiting In-Charge',
-                    awaiting_am: '⏳ Awaiting Assets Manager',
+                    awaiting_location_incharge: '⏳ Awaiting In-Charge (Location)',
+                    awaiting_tech_incharge: '⏳ Awaiting In-Charge (Technician)',
+                    awaiting_am: '⏳ Awaiting Assets Manager (Final)',
                     disposed: '✅ Disposed',
                     rejected: '❌ Rejected'
                 }[r.status] || r.status;
+                el.className = 'disposal-card collapsed';
                 el.innerHTML = `
-        <div class="dc-title">🗑️ ${escapeHtml(r.tag)} — ${escapeHtml(r.loc)}</div>
-        <div class="dc-meta">Dept: ${escapeHtml(r.dept)} · Requested by: <strong>${escapeHtml(r.requestedBy)}</strong> · ${formatDateOnly(r.requestedAt)}</div>
-        <div class="dc-meta">Condition: <strong>${escapeHtml(r.condition)}</strong></div>
-        <div style="margin-top:8px;padding:8px 12px;background:white;border-radius:8px;border-left:4px solid #f4a300;">
-            <strong>Reason:</strong> ${escapeHtml(r.reason)}
+        <div class="cc-head" title="Click to expand / collapse">
+            <div class="dc-title">🗑️ ${escapeHtml(r.equipName || r.tag)} — ${escapeHtml(r.tag)} — ${escapeHtml(r.loc)} <span class="cc-caret">▼</span></div>
         </div>
-        ${r.inchargeDecision ? `<div class="dc-meta">👔 In-Charge: <strong>${escapeHtml(r.inchargeDecision)}</strong> (${escapeHtml(r.inchargeApprovedBy || '')})${r.inchargeComment ? ' — ' + escapeHtml(r.inchargeComment) : ''}</div>` : ''}
-        ${r.amDecision ? `<div class="dc-meta">🗑️ Assets Mgr: <strong>${escapeHtml(r.amDecision)}</strong> (${escapeHtml(r.amApprovedBy || '')})${r.amComment ? ' — ' + escapeHtml(r.amComment) : ''}</div>` : ''}
-        <div class="dc-meta" style="margin-top:6px;"><strong>Status:</strong> ${statusLabel}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-            ${role === 'incharge' && r.status === 'awaiting_incharge' ? `<button class="btn-approve" data-disposal-incharge="${r._docId}">👔 Review</button>` : ''}
-            ${role === 'am' && r.status === 'awaiting_am' ? `<button class="btn-approve" data-disposal-am="${r._docId}">🗑️ Final Approval</button>` : ''}
+        <div class="cc-body" style="margin-top:8px;">
+            <div class="dc-meta">Dept: ${escapeHtml(r.dept)} · Requested by: <strong>${escapeHtml(r.requestedBy)}</strong> · ${formatDateOnly(r.requestedAt)}</div>
+            <div class="dc-meta">Condition: <strong>${escapeHtml(r.condition)}</strong></div>
+            <div style="margin-top:8px;padding:8px 12px;background:white;border-radius:8px;border-left:4px solid #f4a300;">
+                <strong>Reason:</strong> ${escapeHtml(r.reason)}
+            </div>
+            ${r.locationInchargeDecision ? `<div class="dc-meta">👔 Location In-Charge: <strong>${escapeHtml(r.locationInchargeDecision)}</strong> (${escapeHtml(r.locationInchargeApprovedBy || '')})${r.locationInchargeComment ? ' — ' + escapeHtml(r.locationInchargeComment) : ''}</div>` : ''}
+            ${r.techInchargeDecision ? `<div class="dc-meta">🏥 Technician In-Charge: <strong>${escapeHtml(r.techInchargeDecision)}</strong> (${escapeHtml(r.techInchargeApprovedBy || '')})${r.techInchargeComment ? ' — ' + escapeHtml(r.techInchargeComment) : ''}</div>` : ''}
+            ${r.amDecision ? `<div class="dc-meta">🗑️ Assets Mgr (Final): <strong>${escapeHtml(r.amDecision)}</strong> (${escapeHtml(r.amApprovedBy || '')})${r.amComment ? ' — ' + escapeHtml(r.amComment) : ''}</div>` : ''}
+            <div class="dc-meta" style="margin-top:6px;"><strong>Status:</strong> ${statusLabel}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                ${role === 'incharge' && r.status === 'awaiting_location_incharge' ? `<button class="btn-approve" data-disposal-incharge="${r._docId}">👔 Review (Location)</button>` : ''}
+                ${role === 'incharge' && r.status === 'awaiting_tech_incharge' ? `<button class="btn-approve" data-disposal-tech-incharge="${r._docId}">🏥 Review (Technician)</button>` : ''}
+                ${role === 'am' && r.status === 'awaiting_am' ? `<button class="btn-approve" data-disposal-am="${r._docId}">🗑️ Final Approval</button>` : ''}
+                ${role === 'am' && r.status === 'disposed' ? `<button class="btn-secondary" data-disposal-report="${r._docId}" style="padding:6px 14px;font-size:.82rem;">📄 Download Disposal Report</button>` : ''}
+            </div>
         </div>`;
                 return el;
             }
             function bindDisposalButtons(container, list, role) {
+                container.querySelectorAll('.disposal-card > .cc-head').forEach(h => {
+                    h.addEventListener('click', function (e) {
+                        if (e.target.closest('button, a')) return;
+                        this.parentElement.classList.toggle('collapsed');
+                    });
+                });
                 container.querySelectorAll('[data-disposal-incharge]').forEach(b => b.addEventListener('click', () => {
                     const r = list.find(x => x._docId === b.getAttribute('data-disposal-incharge'));
-                    if (r) openDisposalApprovalModal(r, 'incharge');
+                    if (r) openDisposalApprovalModal(r, 'location_incharge');
+                }));
+                container.querySelectorAll('[data-disposal-tech-incharge]').forEach(b => b.addEventListener('click', () => {
+                    const r = list.find(x => x._docId === b.getAttribute('data-disposal-tech-incharge'));
+                    if (r) openDisposalApprovalModal(r, 'tech_incharge');
                 }));
                 container.querySelectorAll('[data-disposal-am]').forEach(b => b.addEventListener('click', () => {
                     const r = list.find(x => x._docId === b.getAttribute('data-disposal-am'));
                     if (r) openDisposalApprovalModal(r, 'am');
                 }));
+                container.querySelectorAll('[data-disposal-report]').forEach(b => b.addEventListener('click', () => {
+                    const r = list.find(x => x._docId === b.getAttribute('data-disposal-report'));
+                    if (r) downloadDisposalReportPDF(r);
+                }));
             }
             function openDisposalApprovalModal(r, role) {
                 const modal = document.getElementById('disposalApprovalModal');
-                document.getElementById('disposalApprovalTitle').textContent =
-                    role === 'incharge' ? '👔 In-Charge Disposal Approval' : '🗑️ Assets Manager Final Approval';
+                const titles = {
+                    location_incharge: '👔 In-Charge (Location) — Disposal Approval',
+                    tech_incharge: '🏥 In-Charge (Technician Dept) — Disposal Approval',
+                    am: '🗑️ Assets Manager — Final Disposal Approval'
+                };
+                document.getElementById('disposalApprovalTitle').textContent = titles[role] || 'Disposal Approval';
                 document.getElementById('disposalApprovalDetails').innerHTML = `
+        <div class="info-row"><span class="k">Equipment Name</span><span class="v">${escapeHtml(r.equipName || '—')}</span></div>
         <div class="info-row"><span class="k">Tag</span><span class="v">${escapeHtml(r.tag)}</span></div>
         <div class="info-row"><span class="k">Location</span><span class="v">${escapeHtml(r.loc)}</span></div>
         <div class="info-row"><span class="k">Department</span><span class="v">${escapeHtml(r.dept)}</span></div>
@@ -12586,20 +13192,76 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 btn.disabled = true;
                 btn.innerHTML = '⏳ …';
                 try {
-                    if (role === 'incharge') {
+                    if (role === 'location_incharge') {
+                        // Step 1: In-Charge of the equipment's location
                         const u = {
-                            inchargeDecision: decision,
-                            inchargeApprovedBy: currentLoggedInName,
-                            inchargeApprovedAt: 'NOW',
-                            inchargeComment: comment,
+                            locationInchargeDecision: decision,
+                            locationInchargeApprovedBy: currentLoggedInName,
+                            locationInchargeApprovedAt: 'NOW',
+                            locationInchargeComment: comment,
+                            status: decision === 'approved' ? 'awaiting_tech_incharge' : 'rejected'
+                        };
+                        const ok = await updateDisposalRequest(r._docId, u);
+                        if (!ok) throw new Error('Update failed');
+                        await createNotification({
+                            recipient: r.requestedBy,
+                            type: 'disposal_location_incharge_approved',
+                            title: (decision === 'approved' ? '👔 Location In-Charge approved — ' : '❌ Location In-Charge rejected — ') + r.tag,
+                            message: `${currentLoggedInName}: ${comment || decision}`,
+                            relatedDocId: r._docId, relatedTag: r.tag, relatedDept: r.dept
+                        });
+                        if (decision === 'approved') {
+                            // Notify the requesting technician's in-charge (Biomedical or Infrastructure)
+                            const users = await loadUsersFromFirestore();
+                            const tech = users[r.requestedBy];
+                            const techDepts = tech ? (Array.isArray(tech.depts) ? tech.depts : (tech.dept ? [tech.dept] : [])) : [];
+                            const targets = Object.keys(users).filter(n => {
+                                if (users[n].role !== 'incharge') return false;
+                                const d = users[n].dept || '';
+                                // Only Biomedical or Infrastructure in-charges
+                                if (normalizeText(d) !== normalizeText(BIOMEDICAL_DEPT_NAME) &&
+                                    normalizeText(d) !== normalizeText(INFRA_DEPT_NAME)) return false;
+                                return techDepts.some(td => normalizeText(td) === normalizeText(d));
+                            });
+                            for (const t of targets) {
+                                await createNotification({
+                                    recipient: t,
+                                    type: 'disposal_requested',
+                                    title: '🏥 In-Charge (Tech Dept) approval needed — ' + r.tag,
+                                    message: `${r.tag} at ${r.loc} passed location approval. Requested by ${r.requestedBy}.`,
+                                    relatedDocId: r._docId, relatedTag: r.tag, relatedDept: r.dept
+                                });
+                            }
+                            if (!targets.length) {
+                                // No in-charge found → forward straight to AM to avoid a dead-end
+                                await updateDisposalRequest(r._docId, { status: 'awaiting_am' });
+                                const ams = Object.keys(users).filter(n => users[n].role === 'assetsmanager');
+                                for (const am of ams) {
+                                    await createNotification({
+                                        recipient: am,
+                                        type: 'disposal_requested',
+                                        title: '🗑️ Final disposal approval — ' + r.tag,
+                                        message: `${r.tag} at ${r.loc} needs your final approval.`,
+                                        relatedDocId: r._docId, relatedTag: r.tag, relatedDept: r.dept
+                                    });
+                                }
+                            }
+                        }
+                    } else if (role === 'tech_incharge') {
+                        // Step 2: In-Charge of the requesting technician (Biomedical / Infrastructure)
+                        const u = {
+                            techInchargeDecision: decision,
+                            techInchargeApprovedBy: currentLoggedInName,
+                            techInchargeApprovedAt: 'NOW',
+                            techInchargeComment: comment,
                             status: decision === 'approved' ? 'awaiting_am' : 'rejected'
                         };
                         const ok = await updateDisposalRequest(r._docId, u);
                         if (!ok) throw new Error('Update failed');
                         await createNotification({
                             recipient: r.requestedBy,
-                            type: 'disposal_incharge_approved',
-                            title: (decision === 'approved' ? '👔 In-Charge approved — ' : '❌ In-Charge rejected — ') + r.tag,
+                            type: 'disposal_tech_incharge_approved',
+                            title: (decision === 'approved' ? '🏥 Technician In-Charge approved — ' : '❌ Technician In-Charge rejected — ') + r.tag,
                             message: `${currentLoggedInName}: ${comment || decision}`,
                             relatedDocId: r._docId, relatedTag: r.tag, relatedDept: r.dept
                         });
@@ -12611,12 +13273,13 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                                     recipient: am,
                                     type: 'disposal_requested',
                                     title: '🗑️ Final disposal approval — ' + r.tag,
-                                    message: `${r.tag} at ${r.loc} needs your final approval.`,
+                                    message: `${r.tag} at ${r.loc} needs your FINAL approval.`,
                                     relatedDocId: r._docId, relatedTag: r.tag, relatedDept: r.dept
                                 });
                             }
                         }
                     } else {
+                        // Step 3: Assets Manager — final approval (equipment is removed here)
                         const u = {
                             amDecision: decision,
                             amApprovedBy: currentLoggedInName,
@@ -12643,23 +13306,207 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     }
                     showStatus(decision === 'approved' ? '✅ Approval recorded.' : '❌ Rejection recorded.', decision === 'approved');
                     modal.classList.remove('show');
-                    if (role === 'incharge') await refreshInchargeDisposals();
-                    else await refreshAssetsDisposals();
+                    if (role === 'am') await refreshAssetsDisposals();
+                    else await refreshInchargeDisposals();
                     await renderNotificationBell();
                 } catch (e) { errEl.textContent = '⚠️ ' + (e.message || 'Failed.'); }
                 btn.disabled = false;
                 btn.innerHTML = o;
             }
+
+            /* ============================================================
+               DISPOSAL COMPLETION REPORT (final download after all 3 approvals)
+               ============================================================ */
+            async function downloadDisposalReportPDF(r) {
+                if (!r) { showStatus('⚠️ No disposal record.', false); return; }
+                if (r.status !== 'disposed') {
+                    showStatus('⏳ The disposal must be fully approved before the report can be downloaded.', false);
+                    return;
+                }
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pW = 210, pH = 297, m = 16, cW = pW - m * 2;
+                let y = drawChubHeader(doc, {
+                    title: 'EQUIPMENT DISPOSAL REPORT',
+                    subtitle: 'Final approved disposal — Location In-Charge + Technician In-Charge + Assets Manager',
+                    ref: 'CHUB/DISP/' + String(r.tag || '').replace(/[^A-Za-z0-9]/g, '_').substring(0, 18),
+                    date: new Date().toLocaleDateString('en-GB')
+                });
+                const rows = [
+                    ['Equipment Name', r.equipName || '—'],
+                    ['Tag', r.tag || '—'],
+                    ['Brand / Model', ((r.brand || '') + ' ' + (r.model || '')).trim() || '—'],
+                    ['Serial Number', r.serial || '—'],
+                    ['Department', r.dept || '—'],
+                    ['Location', r.loc || '—'],
+                    ['Condition', r.condition || '—'],
+                    ['Requested by', r.requestedBy || '—'],
+                    ['Requested at', formatDateOnly(r.requestedAt)],
+                    ['Reason', r.reason || '—']
+                ];
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: m, right: m },
+                    head: [['Equipment & Request', '']],
+                    body: rows.map(x => [x[0], pdfSanitize(x[1])]),
+                    theme: 'striped',
+                    styles: { fontSize: 8.5, cellPadding: 1.8 },
+                    headStyles: { fillColor: [30, 74, 109], textColor: 255, fontSize: 9.5 },
+                    columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold', textColor: [18, 64, 94] }, 1: { cellWidth: cW - 45 } }
+                });
+                y = doc.lastAutoTable.finalY + 6;
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(18, 64, 94);
+                doc.text('APPROVAL CHAIN', m, y);
+                y += 4;
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: m, right: m },
+                    head: [['Approval Step', 'Decision', 'Approved By', 'Date', 'Comment']],
+                    body: [
+                        ['1. Location In-Charge', (r.locationInchargeDecision || '—').toUpperCase(), pdfSanitize(r.locationInchargeApprovedBy || '—'), formatDateOnly(r.locationInchargeApprovedAt), pdfSanitize(r.locationInchargeComment || '—')],
+                        ['2. Technician In-Charge', (r.techInchargeDecision || '—').toUpperCase(), pdfSanitize(r.techInchargeApprovedBy || '—'), formatDateOnly(r.techInchargeApprovedAt), pdfSanitize(r.techInchargeComment || '—')],
+                        ['3. Assets Manager (Final)', (r.amDecision || '—').toUpperCase(), pdfSanitize(r.amApprovedBy || '—'), formatDateOnly(r.amApprovedAt), pdfSanitize(r.amComment || '—')]
+                    ],
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 1.8 },
+                    headStyles: { fillColor: [27, 107, 63], textColor: 255, fontSize: 9 },
+                    columnStyles: {
+                        0: { cellWidth: 42, fontStyle: 'bold', textColor: [18, 64, 94] },
+                        1: { cellWidth: 22, halign: 'center' },
+                        2: { cellWidth: 48 },
+                        3: { cellWidth: 24, halign: 'center' },
+                        4: { cellWidth: cW - 136 }
+                    },
+                    didParseCell: (data) => {
+                        if (data.section === 'body' && data.column.index === 1) {
+                            const v = String(data.cell.raw || '').toLowerCase();
+                            if (v === 'approved') data.cell.styles.textColor = [27, 107, 63];
+                            else if (v === 'rejected') data.cell.styles.textColor = [179, 58, 58];
+                        }
+                    }
+                });
+                y = doc.lastAutoTable.finalY + 6;
+
+                // ── Signature blocks ──
+                if (y + 55 > pH - 25) { doc.addPage(); y = drawChubSlimHeader(doc, { title: 'DISPOSAL REPORT (cont.)', ref: 'CHUB/DISP' }); }
+                const boxH = 50, gap = 4, halfW = (cW - gap) / 2;
+                const locInchargeName = r.locationInchargeApprovedBy || '';
+                const techInchargeName = r.techInchargeApprovedBy || '';
+                const amName = r.amApprovedBy || '';
+                const sig1 = locInchargeName ? await getDisposalSignerSig(locInchargeName) : null;
+                const sig2 = techInchargeName ? await getDisposalSignerSig(techInchargeName) : null;
+                const sig3 = amName ? await getDisposalSignerSig(amName) : null;
+
+                const drawApprovalBox = (x, yTop, w, title, name, dateLabel, sigData) => {
+                    doc.setFillColor(240, 246, 252);
+                    doc.setDrawColor(207, 224, 238);
+                    doc.roundedRect(x, yTop, w, boxH, 2, 2, 'FD');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(91, 123, 150);
+                    doc.text(title, x + 3, yTop + 4.5);
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(10, 42, 63);
+                    doc.text(pdfSanitize(name || '—'), x + 3, yTop + 11);
+                    doc.setFontSize(7);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(58, 101, 131);
+                    doc.text(dateLabel, x + 3, yTop + 15.5);
+                    if (sigData && sigData.url) {
+                        try {
+                            const sw = w - 6, sh = 18;
+                            const saX = x + 3, saY = yTop + 19;
+                            let ww = sw, hh = ww, aspect = 1;
+                            if (sigData.dims && sigData.dims.width && sigData.dims.height) {
+                                aspect = sigData.dims.width / sigData.dims.height;
+                                hh = ww / aspect;
+                                if (hh > sh) { hh = sh; ww = hh * aspect; }
+                            }
+                            doc.addImage(sigData.url, getImageFormat(sigData.url), saX + (sw - ww) / 2, saY + (sh - hh) / 2, ww, hh);
+                        } catch (e) { console.error('[Disposal PDF] sig embed failed', e); }
+                    }
+                    doc.setDrawColor(150, 180, 200);
+                    doc.setLineWidth(0.3);
+                    doc.line(x + 3, yTop + 43, x + w - 3, yTop + 43);
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(6);
+                    doc.setTextColor(91, 123, 150);
+                    doc.text('Signature', x + 3, yTop + 46);
+                };
+
+                drawApprovalBox(m, y, halfW, '1. LOCATION IN-CHARGE', locInchargeName,
+                    'Approved: ' + formatDateOnly(r.locationInchargeApprovedAt), sig1);
+                drawApprovalBox(m + halfW + gap, y, halfW, '2. TECHNICIAN IN-CHARGE', techInchargeName,
+                    'Approved: ' + formatDateOnly(r.techInchargeApprovedAt), sig2);
+                y += boxH + 5;
+
+                if (y + boxH > pH - 25) { doc.addPage(); y = drawChubSlimHeader(doc, { title: 'DISPOSAL REPORT (cont.)', ref: 'CHUB/DISP' }); }
+                drawApprovalBox(m, y, cW, '3. ASSETS MANAGER — FINAL APPROVAL', amName,
+                    'Final approved: ' + formatDateOnly(r.amApprovedAt), sig3);
+                y += boxH + 6;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(6.5);
+                doc.setTextColor(91, 123, 150);
+                doc.text('Disposal ID: ' + pdfSanitize(r._docId || '—'), m, y);
+
+                const totalPages = doc.internal.getNumberOfPages();
+                for (let p = 1; p <= totalPages; p++) {
+                    doc.setPage(p);
+                    drawChubFooter(doc, p, totalPages);
+                }
+
+                const fname = 'CHUB_Disposal_Report_' + String(r.tag || 'UNIT').replace(/[^\w\-]/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+                const bytes = doc.output('arraybuffer');
+                let sb = null;
+                if (amName && normalizeText(amName) === normalizeText(currentLoggedInName) && isCertLoaded()) {
+                    sb = await signPdfBytes(bytes, {
+                        placements: [{ page: totalPages - 1, yFromTopMm: y - boxH - 2, xMm: m + 3 }]
+                    });
+                }
+                if (sb) downloadBytes(sb, fname);
+                else doc.save(fname);
+            }
+
+            /* Helper: fetch a signer's visual signature for the disposal PDF */
+            async function getDisposalSignerSig(name) {
+                if (!name) return null;
+                let url = getInchargeSignatureCached(name);
+                if (!url) url = getSignatureFor(name) || '';
+                if (!url) {
+                    try {
+                        url = await firestoreConfigGet('InchargeSig_' + name) || '';
+                        if (url && !url.startsWith('data:')) url = 'data:image/png;base64,' + url;
+                    } catch (e) { }
+                }
+                if (!url) {
+                    try {
+                        const t = await firestoreConfigGet('TechSig_' + name);
+                        if (t) url = t.startsWith('data:') ? t : 'data:image/png;base64,' + t;
+                    } catch (e) { }
+                }
+                if (!url) return null;
+                url = await ensurePngDataUrl(url);
+                const dims = await loadImageDimensions(url);
+                return { url, dims };
+            }
+
             async function refreshAssetsDisposals() {
                 const list = document.getElementById('amDisposalList');
                 const cnt = document.getElementById('amDisposalCount');
                 if (!list) return;
                 renderSkeletons(list, 3, 'card');
                 try {
-                    const all = await fetchDisposalRequests({});
+                    let all = await fetchDisposalRequests({});
+                    if (CURRENT_DISPOSAL_TIME_FILTER !== 'all') {
+                        const cutoff = Date.now() - (parseInt(CURRENT_DISPOSAL_TIME_FILTER, 10) * 30 * 24 * 60 * 60 * 1000);
+                        all = all.filter(r => new Date(r.requestedAt).getTime() >= cutoff);
+                    }
                     let f = all;
                     if (CURRENT_AM_DISPOSAL_FILTER === 'awaiting_am') f = all.filter(r => r.status === 'awaiting_am');
-                    else if (CURRENT_AM_DISPOSAL_FILTER === 'awaiting_incharge') f = all.filter(r => r.status === 'awaiting_incharge');
+                    else if (CURRENT_AM_DISPOSAL_FILTER === 'awaiting_incharge') f = all.filter(r => r.status === 'awaiting_location_incharge' || r.status === 'awaiting_tech_incharge');
                     else if (CURRENT_AM_DISPOSAL_FILTER === 'disposed') f = all.filter(r => r.status === 'disposed');
                     cnt.textContent = f.length;
                     if (!f.length) {
@@ -12677,17 +13524,48 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                 CURRENT_AM_DISPOSAL_FILTER = this.dataset.status;
                 refreshAssetsDisposals();
             }));
+            document.querySelectorAll('#amDisposalTimeFilterBar .filter-chip').forEach(c => c.addEventListener('click', function () {
+                document.querySelectorAll('#amDisposalTimeFilterBar .filter-chip').forEach(x => x.classList.remove('active'));
+                this.classList.add('active');
+                CURRENT_DISPOSAL_TIME_FILTER = this.dataset.time;
+                refreshAssetsDisposals();
+            }));
+            document.querySelectorAll('#inchargeDisposalTimeFilterBar .filter-chip').forEach(c => c.addEventListener('click', function () {
+                document.querySelectorAll('#inchargeDisposalTimeFilterBar .filter-chip').forEach(x => x.classList.remove('active'));
+                this.classList.add('active');
+                CURRENT_DISPOSAL_TIME_FILTER = this.dataset.time;
+                refreshInchargeDisposals();
+            }));
             async function refreshAssetsInventory() {
                 const tbody = document.getElementById('amInventoryTableBody');
                 const cnt = document.getElementById('amInvCount');
+                const deptFilterEl = document.getElementById('amDeptFilter');
                 if (!tbody) return;
-                tbody.innerHTML = '<tr><td colspan="8" style="padding:0;"><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div></td></tr>';
+
+                // Populate the department filter if it's empty
+                if (deptFilterEl && deptFilterEl.options.length <= 1) {
+                    Object.keys(DEPARTMENTS).forEach(d => {
+                        const o = document.createElement('option');
+                        o.value = d; o.textContent = d;
+                        deptFilterEl.appendChild(o);
+                    });
+                }
+
+                const selectedDept = deptFilterEl ? deptFilterEl.value : 'all';
+
+                tbody.innerHTML = '<tr><td colspan="9" style="padding:0;"><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div><div class="skeleton skeleton-row" style="margin:8px;"></div></td></tr>';
                 try {
-                    const inv = await fetchAllInventory();
+                    let inv = await fetchAllInventory();
                     const records = await fetchAllLogs();
+                    
+                    // Filter by the selected department
+                    if (selectedDept !== 'all') {
+                        inv = inv.filter(a => normalizeText(a.dept) === normalizeText(selectedDept));
+                    }
+
                     cnt.textContent = inv.length;
                     if (!inv.length) {
-                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#5b7b96;padding:14px;">No equipment.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#5b7b96;padding:14px;">No equipment.</td></tr>';
                         return;
                     }
                     const now = new Date();
@@ -12696,8 +13574,13 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         const ws = a.workingStatus || 'Working';
                         const wb = ws === 'Not Working' ? '<span class="status-badge not-working">⛔</span>' : '<span class="status-badge working">✅</span>';
                         const lbl = { maintained: '✅', pending: '⏳', overdue: '🚨', never: '⚪' };
-                        return `<tr>
+                        
+                        // Save both the tag and serial number in a data attribute for searching
+                        const searchStr = `${a.tag || ''} ${a.serial || ''}`.toLowerCase();
+                        
+                        return `<tr data-search="${escapeHtml(searchStr)}">
                 <td><strong>${escapeHtml(a.tag)}</strong></td>
+                <td>${escapeHtml(a.equipName || '—')}</td>
                 <td>${escapeHtml(a.dept)}</td>
                 <td>${escapeHtml(a.loc)}</td>
                 <td>${escapeHtml((a.brand || '') + ' ' + (a.model || ''))}</td>
@@ -12727,11 +13610,149 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                         } catch (e) { showStatus('⚠️ ' + e.message, false); }
                     }));
                 } catch (e) {
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#b33a3a;padding:14px;">⚠️ ' + escapeHtml(e.message) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#b33a3a;padding:14px;">⚠️ ' + escapeHtml(e.message) + '</td></tr>';
                 }
             }
             document.getElementById('amRefreshInvBtn')?.addEventListener('click', refreshAssetsInventory);
+            
+            document.getElementById('amDownloadInventoryPdfBtn')?.addEventListener('click', async function () {
+                const btn = this;
+                const o = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Generating…';
+                try {
+                    const deptFilter = document.getElementById('amDeptFilter')?.value || 'all';
+                    const inv = await fetchAllInventory();
+                    const filtered = deptFilter === 'all' ? inv : inv.filter(a => normalizeText(a.dept) === normalizeText(deptFilter));
+
+                    if (!filtered.length) {
+                        showStatus('📭 No equipment for this filter.', false);
+                        btn.disabled = false;
+                        btn.innerHTML = o;
+                        return;
+                    }
+
+                    // Load AM's signature certificate if available
+                    if (currentLoggedInName) {
+                        await ensurePfxLoadedFor(currentLoggedInName, { forceReload: true });
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                    const pW = 297, pH = 210, m = 14, cW = pW - m * 2;
+
+                    let y = drawChubHeader(doc, {
+                        title: 'EQUIPMENT INVENTORY REPORT',
+                        subtitle: 'Department: ' + (deptFilter === 'all' ? 'All Departments' : deptFilter),
+                        ref: 'CHUB/INV/' + new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+                        date: new Date().toLocaleDateString('en-GB')
+                    });
+
+                    const body = filtered.map(a => [
+                        pdfSanitize(a.equipName || '—'),
+                        pdfSanitize(a.tag),
+                        pdfSanitize(a.dept),
+                        pdfSanitize(a.loc),
+                        pdfSanitize((a.brand || '') + ' ' + (a.model || '')),
+                        pdfSanitize(a.serial || '—'),
+                        pdfSanitize(a.workingStatus || 'Working')
+                    ]);
+
+                    doc.autoTable({
+                        startY: y,
+                        margin: { left: m, right: m },
+                        head: [['Equipment Name', 'Tag', 'Department', 'Location', 'Brand / Model', 'Serial Number', 'Working?']],
+                        body: body,
+                        theme: 'striped',
+                        styles: { fontSize: 8, cellPadding: 1.8 },
+                        headStyles: { fillColor: [30, 74, 109], textColor: 255, fontSize: 8.5 },
+                        columnStyles: {
+                            0: { cellWidth: 55 },
+                            1: { cellWidth: 40 },
+                            2: { cellWidth: 35 },
+                            3: { cellWidth: 45 },
+                            4: { cellWidth: 40 },
+                            5: { cellWidth: 35 },
+                            6: { cellWidth: 20, halign: 'center' }
+                        }
+                    });
+
+                    y = doc.lastAutoTable.finalY + 10;
+
+                    if (y + 40 > pH - 15) {
+                        doc.addPage();
+                        y = drawChubSlimHeader(doc, { title: 'INVENTORY REPORT (cont.)', ref: 'CHUB/INV' });
+                    }
+
+                    const sigBoxY = pH - 50;
+                    const sigBoxW = 80;
+                    const sigBoxH = 35;
+
+                    doc.setFillColor(240, 246, 252);
+                    doc.setDrawColor(207, 224, 238);
+                    doc.roundedRect(m, sigBoxY, sigBoxW, sigBoxH, 2, 2, 'FD');
+
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(91, 123, 150);
+                    doc.text('APPROVED BY (ASSETS MANAGER)', m + 3, sigBoxY + 4.5);
+                    
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(10, 42, 63);
+                    doc.text(pdfSanitize(currentLoggedInName), m + 3, sigBoxY + 11);
+
+                    const techSig = getSignatureFor(currentLoggedInName) || await firestoreConfigGet('TechSig_' + currentLoggedInName);
+                    if (techSig) {
+                        try {
+                            const sigUrl = await ensurePngDataUrl(techSig.startsWith('data:') ? techSig : 'data:image/png;base64,' + techSig);
+                            doc.addImage(sigUrl, 'PNG', m + 3, sigBoxY + 13, 60, 18);
+                        } catch(e) {}
+                    }
+
+                    doc.setDrawColor(150, 180, 200);
+                    doc.setLineWidth(0.3);
+                    doc.line(m + 3, sigBoxY + 30, m + sigBoxW - 3, sigBoxY + 30);
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(6);
+                    doc.setTextColor(91, 123, 150);
+                    doc.text('Signature', m + 3, sigBoxY + 33);
+
+                    const totalPages = doc.internal.getNumberOfPages();
+                    for (let p = 1; p <= totalPages; p++) {
+                        doc.setPage(p);
+                        drawChubFooter(doc, p, totalPages);
+                    }
+
+                    const bytes = doc.output('arraybuffer');
+                    let sb = null;
+                    if (isCertLoaded()) {
+                        sb = await signPdfBytes(bytes, {
+                            placements: [{ page: doc.getNumberOfPages() - 1, yFromTopMm: sigBoxY + 31, xMm: m + 3 }]
+                        });
+                    }
+
+                    const fname = `CHUB_Inventory_${(deptFilter === 'all' ? 'All' : deptFilter).replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+                    if (sb) downloadBytes(sb, fname);
+                    else doc.save(fname);
+                    
+                    showStatus('📄 Inventory PDF downloaded.', true);
+                } catch(e) {
+                    showStatus('⚠️ ' + e.message, false);
+                }
+                btn.disabled = false;
+                btn.innerHTML = o;
+            });
             document.getElementById('amAddEquipmentBtn')?.addEventListener('click', () => addRefBtn.click());
+            document.getElementById('amDeptFilter')?.addEventListener('change', refreshAssetsInventory);
+
+            // NEW: Instant search for Asset Manager Inventory
+            document.getElementById('amInvSearch')?.addEventListener('input', function () {
+                const q = this.value.toLowerCase().trim();
+                document.querySelectorAll('#amInventoryTableBody tr').forEach(tr => {
+                    const searchData = tr.getAttribute('data-search') || '';
+                    tr.style.display = !q || searchData.includes(q) ? '' : 'none';
+                });
+            });
 
             /* ============================================================
                PDF GENERATORS
@@ -12794,7 +13815,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                             isFirstPage = false;
                             const isAC = (data.checklistType === 'ac');
                             return drawChubHeader(doc, {
-                                title: (isAC ? 'AIR CONDITIONER PM REPORT' : (data.checklistType === 'none' ? 'EQUIPMENT PM REPORT' : 'REFRIGERATOR PM REPORT')),
+                                title: (isAC ? 'AIR CONDITIONER PM REPORT' : ((data.checklistType === 'none' || data.checklistType === 'biomedical') ? 'EQUIPMENT PM REPORT' : 'REFRIGERATOR PM REPORT')),
                             subtitle: 'Work Date: ' + formatDateOnly(data.workDate) +
                                 '   |   Technician: ' + stripEmojiForPdf(data.technician || ''),
                             ref: data.reportId || '',
@@ -12817,7 +13838,7 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     doc.setTextColor(255, 255, 255);
                     doc.setFontSize(11);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(pdfSanitize(`${data.refTag || ''} — ${data.refLocation || ''}`), margin + 4, y + 5.5);
+                    doc.text(pdfSanitize(`${data.refEquipName ? data.refEquipName + ' — ' : ''}${data.refTag || ''} — ${data.refLocation || ''}`), margin + 4, y + 5.5);
                     doc.setFontSize(8);
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(203, 228, 247);
@@ -12925,6 +13946,11 @@ const nd = getNextPmDateByType_(refTypeForPm, lw);
                     };
 
                     const checklistType = data.checklistType || 'fridge';
+if (checklistType === 'biomedical') {
+    const _bs = new Set(safeSplit(data.bioItems, '|'));
+    const _bi = (Array.isArray(data.bioItemTexts) ? data.bioItemTexts : []).map((t, idx) => ({ text: t, checked: _bs.has(String(idx + 1)) }));
+    drawSection('PM Checklist - ' + pdfSanitize(data.refType || 'Biomedical'), 'Items checked', _bi.filter(x => x.checked).length + ' / ' + _bi.length, _bi, '');
+}
                     if (checklistType === 'ac') {
                         const as = new Set(safeSplit(data.airflowItems, '|'));
                         const ai = AC_AIRFLOW_TEXTS.map((t, idx) => ({ text: t, checked: as.has(String(idx + 1)) }));
@@ -13309,7 +14335,8 @@ const dim = sigDims[_techKey];
 
                 records.forEach(r => {
                     const isAC = r.checklistType === 'ac';
-                    const itemsToCheck = isAC ? AC_ITEMS : FRIDGE_ITEMS;
+                    if (r.checklistType === 'biomedical' || r.checklistType === 'none') return;
+const itemsToCheck = isAC ? AC_ITEMS : FRIDGE_ITEMS;
                     const targetMap = isAC ? acMap : fridgeMap;
                     
                     const set1 = new Set(safeSplit(isAC ? (r['Airflow Items'] || r.airflowItems) : (r['Clean Items'] || r.cleanItems), '|'));
@@ -13473,8 +14500,8 @@ let y = drawChubHeader(doc, {
                 const _zEName = safeStr(rec.refEquipName || rec['Equipment Name'] || '');
                 const _zSerial = safeStr(rec.refSerial);
                 const rows = [
-                    ['Tag', safeStr(rec.refTag)],
                     ['Equipment Name', _zEName],
+                    ['Tag', safeStr(rec.refTag)],
                     ['Type', safeStr(rec.refType)],
                     ['Brand', safeStr(rec.refBrand)],
                     ['Model', safeStr(rec.refModel)],
@@ -13539,7 +14566,10 @@ let y = drawChubHeader(doc, {
                     }
                     y += 4;
                 };
-                if (_jcType === 'ac') {
+                if (_jcType === 'biomedical') {
+    const _bt = Array.isArray(rec.bioItemTexts) ? rec.bioItemTexts : [];
+    sec('PM Checklist - ' + pdfSanitize(rec.refType || ''), _bt, rec.bioItems, 1, '', '');
+} else if (_jcType === 'ac') {
                     sec('Filters, Coils & Airflow', AC_AIRFLOW_TEXTS, rec.airflowItems, 1, rec.airflowRating, rec.airflowRemarks);
                     sec('Electrical & Refrigerant', AC_ELECTRICAL_TEXTS, rec.electricalItems, 6, rec.electricalRating, rec.electricalRemarks);
                     sec('Drainage & Performance', AC_DRAINAGE_TEXTS, rec.drainageItems, 11, rec.drainageRating, rec.drainageRemarks);
@@ -14860,6 +15890,7 @@ let y = drawChubHeader(doc, {
                     && normalizeText(t.assignedTo) === normalizeText(currentLoggedInName)
                     && !t.escalated;
                 const isEscalated = t.escalated === true;
+                const canReassign = opts.canReassign && (t.escalated === true || !t.assignedTo) && t.status !== 'verified';
                 const targetBadge = t.targetRole === 'incharge'
                     ? '<span style="background:#fff3cd;color:#7a5300;padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:800;margin-left:6px;">👔 IN-CHARGE</span>'
                     : '<span style="background:#e7f0f8;color:#1e4a6d;padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:800;margin-left:6px;">👨‍🔧 TECH</span>';
@@ -14902,6 +15933,7 @@ let y = drawChubHeader(doc, {
                 ${canComplete ? `<button class="btn-approve" data-task-complete="${escapeHtml(t._docId)}" style="padding:6px 14px;font-size:.82rem;">✅ Mark Complete</button>` : ''}
                 ${canDelegate ? `<button class="btn-secondary" data-task-delegate="${escapeHtml(t._docId)}" style="padding:6px 14px;font-size:.82rem;background:#e8f1fb;color:#0b3d91;">🔁 Delegate to Tech</button>` : ''}
                 ${canVerify ? `<button class="btn-approve" data-task-verify="${escapeHtml(t._docId)}" style="padding:6px 14px;font-size:.82rem;">👔 Verify</button>` : ''}
+                ${canReassign ? `<button class="btn-primary" data-task-reassign="${escapeHtml(t._docId)}" style="padding:6px 14px;font-size:.82rem;">🔁 Reassign</button>` : ''}
                 ${canEscalate ? `<button class="btn-remove" data-task-escalate="${escapeHtml(t._docId)}" style="padding:6px 14px;font-size:.82rem;">⚠️ Escalate</button>` : ''}
             </div>
         </div>
@@ -14939,6 +15971,11 @@ let y = drawChubHeader(doc, {
                     const t = list.find(x => x._docId === b.getAttribute('data-task-verify'));
                     if (t) openVerifyTaskModal(t);
                 }));
+                container.querySelectorAll('[data-task-reassign]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const t = list.find(x => x._docId === b.getAttribute('data-task-reassign'));
+    if (t) openDelegateTaskModal(t);
+}));
                 container.querySelectorAll('[data-task-delegate]').forEach(b => b.addEventListener('click', e => {
                     e.stopPropagation();
                     const t = list.find(x => x._docId === b.getAttribute('data-task-delegate'));
@@ -15329,6 +16366,7 @@ let y = drawChubHeader(doc, {
                         targetRole: 'technician',
                         originalAssignee: t.originalAssignee || t.assignedTo || currentLoggedInName,
                         delegatedBy: currentLoggedInName,
+                        escalated: false,
                         delegatedAt: 'NOW',
                         status: 'pending',        // ← NEW: reset status so new tech must start fresh
                         notes: '',                // ← NEW: clear old tech's notes
@@ -15389,6 +16427,7 @@ let y = drawChubHeader(doc, {
                     }
                     wrap.innerHTML = f.map(t => renderTaskCard(t, {
                         canVerify: true,
+                        canReassign: true,
                         canStart: false,
                         canComplete: false,
                         canDelegate: false
@@ -16223,22 +17262,34 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                 if (!sel) return;
                 const prev = sel.value;
                 const users = await loadUsersFromFirestore();
-                const techs = Object.keys(users)
-                    .filter(n =>
-                        users[n].role === 'technician' ||
-                        users[n].role === 'supervisor' ||
-                        users[n].role === 'assetsmanager' ||
-                        users[n].role === 'infra_manager'
-                    )
-                    .sort();
+                const loginRole = document.getElementById('loginRoleSelect')?.value || 'technician';
+
+                let techs;
+                if (loginRole === 'assetsmanager') {
+                    // Assets Manager login → show ONLY users with the assetsmanager permission
+                    techs = Object.keys(users)
+                        .filter(n => userRecHasPermission(users[n], 'assetsmanager'))
+                        .sort();
+                } else {
+                    // Technician login → DO NOT show assets managers
+                    techs = Object.keys(users).filter(n => {
+                        const u = users[n];
+                        if (userRecHasPermission(u, 'assetsmanager')) return false;
+                        return userRecHasPermission(u, 'technician') ||
+                               userRecHasPermission(u, 'supervisor') ||
+                               userRecHasPermission(u, 'infra_manager');
+                    }).sort();
+                }
+
                 sel.innerHTML = '<option value="">— Choose your name —</option>';
                 techs.forEach(n => {
                     const o = document.createElement('option');
                     o.value = n;
-                    const rt = users[n].role === 'supervisor' ? ' · 👑 Manager'
-                        : users[n].role === 'assetsmanager' ? ' · 🗑️ Assets Mgr'
-                            : users[n].role === 'infra_manager' ? ' · 🏗️ Infra Mgr'
-                                : '';
+                    const u = users[n];
+                    const rt = userRecHasPermission(u, 'supervisor') ? ' · 👑 Manager'
+                        : userRecHasPermission(u, 'assetsmanager') ? ' · 🗑️ Assets Mgr'
+                        : userRecHasPermission(u, 'infra_manager') ? ' · 🏗️ Infra Mgr'
+                        : '';
                     o.textContent = n + rt;
                     sel.appendChild(o);
                 });
@@ -16256,7 +17307,7 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                 dl.innerHTML = '';
                 const users = await loadUsersFromFirestore();
                 Object.keys(users)
-                    .filter(n => users[n].role === 'incharge')
+                    .filter(n => userRecHasPermission(users[n], 'incharge') || userRecHasPermission(users[n], 'head_biomedical'))
                     .filter(n => !fd || normalizeText(users[n].dept) === normalizeText(fd))
                     .sort()
                     .forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
@@ -16278,6 +17329,7 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
             loginRoleSelect.addEventListener('change', async () => {
                 const v = loginRoleSelect.value;
                 const isIC = v === 'incharge';
+                try { await populateTechnicianLoginSelect(); } catch (e) {}
                 loginTechGroup.style.display = isIC ? 'none' : 'block';
                 loginInchargeGroup.style.display = isIC ? 'block' : 'none';
                 loginError.textContent = '';
@@ -16391,7 +17443,7 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
 
                     // 🔔 Trigger Push Notification Permission Setup
                     if (window.setupPushNotifications) {
-                        window.setupPushNotifications();
+                        window.setupPushNotifications(currentLoggedInName);
                     }
 
                     initNotificationPoller();
@@ -16424,6 +17476,10 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                         REF_INVENTORY = [];
                         setTimeout(() => Promise.resolve(refreshInfraManagerTasks()).catch(() => { }), 400);
                         showStatus('🏗️ Welcome ' + p.name, true);
+                    } else if (currentRole === 'head_biomedical') {
+                        REF_INVENTORY = [];
+                        fetchInchargeSignatureFromCloud(p.name).then(s => { if (s) currentInchargeSignature = s; });
+                        showStatus('🏥 Welcome ' + p.name, true);
                     } else {
                         REF_INVENTORY = [];
                         renderRefSelector();
@@ -16440,6 +17496,7 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                         try {
                             const all = await fetchAllInventory();
                             REF_INVENTORY = all.filter(a => {
+                                if (!equipVisibleToMe(a)) return false;
                                 // 1) ALWAYS show equipment this technician owns —
                                 //    even if its `dept` was not renamed by the migration
                                 //    (e.g. still says "Laboratory" / "Pharmacy" / etc.).
@@ -16565,7 +17622,11 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                             openSetPinModal(n, r.role);
                             return;
                         }
-
+                          if (getPinAttempts(n).count >= MAX_PIN_ATTEMPTS) {
+    loginError.innerHTML = await buildManagerContactErrorHtml(MAX_PIN_ATTEMPTS);
+    loginPinInput.value = '';
+    return;
+}
                         if (String(r.pin) !== pin) {
                             const newCount = incrementPinAttempt(n);
                             if (newCount >= MAX_PIN_ATTEMPTS) {
@@ -16592,6 +17653,10 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                     if (!iname) { loginError.textContent = 'Enter your name.'; return; }
                     const r = LIVE_USERS[iname];
                     if (!r || r.role !== 'incharge') { loginError.textContent = 'Not registered as In-Charge.'; loginPinInput.value = ''; loginPinInput.focus(); return; }
+                    if (r.dept && normalizeText(r.dept) !== normalizeText(dept)) {
+    loginError.textContent = 'This account belongs to the ' + r.dept + ' department.';
+    return;
+}
 
                     if (!r.pin || String(r.pin).trim() === '') {
                         loginBtn.disabled = false;
@@ -16599,7 +17664,11 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                         openSetPinModal(iname, 'incharge');
                         return;
                     }
-
+                    if (getPinAttempts(iname).count >= MAX_PIN_ATTEMPTS) {
+    loginError.innerHTML = await buildManagerContactErrorHtml(MAX_PIN_ATTEMPTS);
+    loginPinInput.value = '';
+    return;
+}
                     if (String(r.pin) !== pin) {
                         const newCount = incrementPinAttempt(iname);
                         if (newCount >= MAX_PIN_ATTEMPTS) {
@@ -16612,7 +17681,7 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                         return;
                     }
                     clearPinAttempts(iname);
-                    await maybeGateWith2FA(iname, { name: iname, dept, role: 'incharge' });
+                    await maybeGateWith2FA(iname, { name: iname, dept: r.dept || dept, role: 'incharge' });
                 } finally {
                     // 🔧 FIXES the pre-existing bug where the button stayed disabled
                     // after a wrong PIN. Do NOT reset it if the 2FA modal is showing
@@ -16757,7 +17826,7 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                 const t = new Date();
                 const p = new Date();
                 p.setDate(t.getDate() - 90);
-                const fmt = d => d.toISOString().slice(0, 10);
+                const fmt = d => toIsoDate_(d);
                 analysisTo.value = fmt(t);
                 analysisFrom.value = fmt(p);
             }
@@ -16765,6 +17834,12 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                 populateAnalysisDeptSelect();
                 setDefaultAnalysisDates();
                 analysisError.textContent = '';
+                
+                // ✅ Sync the category filter from the bottom toolbar
+                const bottomCat = document.getElementById('actionCategoryFilter')?.value || 'all';
+                const analysisCat = document.getElementById('analysisCategory');
+                if (analysisCat) analysisCat.value = bottomCat;
+
                 const n = document.getElementById('analysisScopeName');
                 if (n) n.textContent = currentLoggedInName || 'your own';
                 analysisModal.classList.add('show');
@@ -16975,7 +18050,11 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                     loginError.textContent = '⚠️ ' + e.message;
                     return; 
                 }
-
+                 if (!secret && LIVE_USERS[name] && LIVE_USERS[name].totpEnabled) {
+    loginBtn.disabled = false; loginBtn.innerHTML = origHtml;
+    loginError.textContent = '⚠️ Could not verify 2FA (network). Try again.';
+    return;
+}
                 // If 2FA is not enabled, let them in.
                 if (!secret) { 
                     await completeLoginAfter2FA(sessionPayload); 
@@ -17367,6 +18446,30 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                     }
                 } catch (e) { console.warn('Bootstrap Munyaneza failed:', e); }
 
+                // 🗑️ Bootstrap Assets Manager — Managed by the Supervisor (GATANGANWA Raissa)
+                try {
+                    const existing = await loadUsersFromFirestore();
+                    if (!existing[ASSETS_MANAGER_NAME]) {
+                        await window.FB.setDoc(
+                            window.FB.doc(window.FB.db, 'users', userDocId(ASSETS_MANAGER_NAME)),
+                            {
+                                name: ASSETS_MANAGER_NAME,
+                                role: 'assetsmanager',
+                                pin: '',
+                                accountStatus: 'pending_pin',
+                                dept: '',
+                                depts: [],
+                                phone: '',
+                                email: '',
+                                updatedAt: window.FB.serverTimestamp()
+                            },
+                            { merge: true }
+                        );
+                        console.log('🗑️ Bootstrapped', ASSETS_MANAGER_NAME, '— PIN must be set on first login.');
+                        USERS_CACHE = null; // Force reload so the manager sees it right away
+                    }
+                } catch (e) { console.warn('Bootstrap Assets Manager failed:', e); }
+
                 try { await populateTechnicianLoginSelect(); } catch (e) { console.warn('Tech login list:', e); }
                 try { await populateInchargeLoginList(); } catch (e) { console.warn('Incharge login list:', e); }
                 try { await populateInchargeSuggestions(); } catch (e) { console.warn('Incharge suggestions:', e); }
@@ -17375,6 +18478,17 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                 updatePendingCount();
                 setSyncStatus('', 'Ready');
                 updateTechnicianDisplay();
+                try {
+    const raw = !showingPublicInfo && sessionStorage.getItem(SESSION_KEY);
+    if (raw) {
+        const s = JSON.parse(raw);
+        const users = await loadUsersFromFirestore();
+        if (s && users[s.name] && Date.now() - (s.time || 0) < 8 * 3600 * 1000) {
+            LIVE_USERS = users;
+            await unlockApp(s);
+        } else clearSession();
+    }
+} catch (e) { console.warn('session restore', e); }
                 setTimeout(() => { try { flushQueue(); } catch (e) { } }, 2000);
             });
 
@@ -17430,6 +18544,25 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                        /* ============================================================
                AUTO-CLEANUP: Delete old read notifications (Storage Management)
                ============================================================ */
+            async function autoCleanupOldDisposals() {
+                try {
+                    const cutoffDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+                    const snap = await window.FB.getDocs(window.FB.collection(window.FB.db, 'disposalRequests'));
+                    const toDelete = [];
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        const reqDate = d.requestedAt && d.requestedAt.toDate ? d.requestedAt.toDate() : new Date(d.requestedAt);
+                        if (reqDate && reqDate < cutoffDate && (d.status === 'disposed' || d.status === 'rejected')) {
+                            toDelete.push(doc.ref);
+                        }
+                    });
+                    if (toDelete.length > 0) {
+                        await Promise.all(toDelete.map(ref => window.FB.deleteDoc(ref)));
+                        console.log(`🧹 [Storage] Auto-deleted ${toDelete.length} old disposal records.`);
+                    }
+                } catch (e) { console.warn('Auto-delete disposals failed:', e); }
+            }
+
             async function autoCleanupOldNotifications() {
                 try {
                     const DAYS_OLD = 30; // Change to 7, 60, etc., based on your needs
@@ -17466,7 +18599,8 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                 if (__notifPollTimer) clearInterval(__notifPollTimer);
                 
                 // 🧹 Run the background cleanup silently
-                autoCleanupOldNotifications();
+                    autoCleanupOldNotifications();
+                    autoCleanupOldDisposals();
     try {
         const existing = await fetchMyNotifications();
         __seenNotifIds = new Set(existing.map(n => n._docId));
@@ -17490,6 +18624,7 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                     const list = await fetchMyNotifications();
                     const newOnes = list.filter(n => !n.read && !__seenNotifIds.has(n._docId));
                     if (newOnes.length > 0) {
+    ['pmLogs', 'curative', 'tasks', 'equipment'].forEach(invalidateCache);
                         playNotificationSound();
                         if ('Notification' in window && Notification.permission === 'granted') {
                             const latest = newOnes[0];
@@ -17543,7 +18678,24 @@ document.getElementById('userGuideBtn')?.addEventListener('click', function () {
             function updateChecklistProgress() {
                 const isAC = document.getElementById('acChecklistBlock').style.display === 'block';
                 const isFridge = document.getElementById('fridgeChecklistBlock').style.display === 'block';
-                if (!isAC && !isFridge) {
+                const isBioBlk = document.getElementById('bioChecklistBlock') && document.getElementById('bioChecklistBlock').style.display === 'block';
+['chipClean', 'chipTemp', 'chipDoor'].forEach(id => { const c = document.getElementById(id); if (c) c.style.display = isBioBlk ? 'none' : ''; });
+if (isBioBlk) {
+    const cbs = Array.from(document.querySelectorAll('.check-bio'));
+    const done = cbs.filter(c => c.checked).length;
+    const badge = document.getElementById('checklistProgressBadge');
+    if (badge) {
+        badge.textContent = done + ' / ' + cbs.length;
+        badge.classList.remove('complete', 'partial');
+        if (cbs.length && done === cbs.length) badge.classList.add('complete'); else if (done > 0) badge.classList.add('partial');
+    }
+    const text = document.getElementById('checklistProgressText');
+    if (text) text.textContent = done + ' / ' + cbs.length + ' completed';
+    const bar = document.getElementById('checklistProgressBar');
+    if (bar) bar.style.width = cbs.length ? Math.round((done / cbs.length) * 100) + '%' : '0%';
+    return;
+}
+if (!isAC && !isFridge) {
                     const badge = document.getElementById('checklistProgressBadge');
                     if (badge) { badge.textContent = '0 / 0'; badge.style.background = '#9cb9d0'; }
                     const text = document.getElementById('checklistProgressText');
@@ -17742,16 +18894,32 @@ document.querySelectorAll('.check-ref, .check-ac').forEach(cb => {
             document.getElementById('pauseCurativeSaveBtn')?.addEventListener('click', savePauseCurative);
             document.getElementById('pauseTaskCancel')?.addEventListener('click', () => document.getElementById('pauseTaskModal').classList.remove('show'));
             document.getElementById('pauseTaskSaveBtn')?.addEventListener('click', savePauseTask);
-            window.__DEV = {
-                fetchAllLogs,
-                fetchRefInfoFromCloud,
-                ensureReportHash,
-                fetchAllInventory,
-                normalizeText,
-                mapFirestorePmLog,
-                recordTime,
-                generatePDF
-            };
+
+            // ===== Reset PIN handler (manager) =====
+            document.addEventListener('click', async e => {
+                const b = e.target.closest('[data-reset-pin]'); if (!b) return;
+                const n = b.getAttribute('data-reset-pin');
+                if (!await smartConfirm('Reset PIN for ' + n + '? They will choose a new one at next login.',
+                    { title: '🔑 Reset PIN', icon: '🔑', okText: 'Reset', danger: false })) return;
+                await window.FB.setDoc(window.FB.doc(window.FB.db, 'users', userDocId(n)),
+                    { pin: '', accountStatus: 'pending_pin', pinChangedAt: window.FB.serverTimestamp(), pinChangedBy: currentLoggedInName },
+                    { merge: true });
+                USERS_CACHE = null; clearPinAttempts(n);
+                showStatus('🔑 PIN reset for ' + n, true);
+                renderTechnicianEditor();
+                renderInchargeEditor();
+            });
+            
+    ['refreshCurativeBtn','refreshPendingBtn','refreshInfraTasksBtn','escalatedRefreshBtn',
+ 'curativeRefreshBtn','dashRefreshBtn','inchargeRefreshInvBtn','amRefreshInvBtn','ttRefreshBtn']
+  .forEach(id => document.getElementById(id)?.addEventListener('click',
+      () => ['pmLogs','equipment','curative','tasks'].forEach(invalidateCache), true));
+
+document.getElementById('technicianSection')?.addEventListener('change', e => {
+    if (e.target.matches('.check-ref, .check-ac, .check-bio')) {
+        window.__ckOwner = (REF_FILTERED[refSelect.value] || {}).tag || '';
+    }
+});
 
         })();
     </script>
