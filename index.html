@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
    <title>CHUB Maint Fleet — Equipment & Maintenance</title>
     <meta name="theme-color" content="#0b3d91">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self';">
     
     <!-- Web Icon & Apple Icon -->
     <link rel="icon" type="image/png" href="icon-192.png">
@@ -18,6 +19,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+        <!-- Supabase SDK -->
         <!-- ===== UPDATE NOTIFICATION SYSTEM (FREE) ===== -->
     <script>
     (function() {
@@ -154,108 +157,141 @@
     }
     </style>
     <!-- ===== END UPDATE NOTIFICATION SYSTEM ===== -->
+     <!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- jQuery (Required for Chart.js) -->
+     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import {
-            getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
-            updateDoc, deleteDoc, query, where, orderBy, limit,
-            serverTimestamp, Timestamp
-        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+        // Supabase SDK loaded via global script tag above
 
-        // ✅ FIXED: Put your actual API keys back here
-        const firebaseConfig = {
-            apiKey: "AIzaSyAK-hbd1QQbREBdI3sFHexX14TcyFalRyA",
-            authDomain: "chub-equipment-maintenance.firebaseapp.com",
-            projectId: "chub-equipment-maintenance",
-            storageBucket: "chub-equipment-maintenance.firebasestorage.app",
-            messagingSenderId: "680949913078",
-            appId: "1:680949913078:web:f354a5b8ce2e6db4de23d7"
+        // ✅ SUPABASE INITIALIZATION
+        // ⚠️ REPLACE THESE WITH YOUR ACTUAL SUPABASE URL AND ANON KEY
+        const SUPABASE_URL = 'https://xomhiexarmnjjcpuqexc.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhvbWhpZXhhcm1uampjcHVxZXhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1OTIwOTksImV4cCI6MjEwOTE2ODA5OX0.F_OiFn7RLajlpd6oMlddtAb6eAwirn3ZLHob6S-7xk8';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                // ---- helpers ----
+        const clean = v => (v instanceof Date ? v.toISOString() : v);
+        const cleanPayload = obj => {
+            const out = {};
+            Object.keys(obj || {}).forEach(k => {
+                if (obj[k] === undefined) return;
+                
+                // 🔥 FIX: Convert empty strings to null for date/timestamp fields
+                // to prevent PostgreSQL "invalid input syntax for type timestamp" errors.
+                if (obj[k] === '' && (k.endsWith('At') || k.endsWith('Date') || k === 'timestamp')) {
+                    out[k] = null;
+                } else {
+                    out[k] = clean(obj[k]);
+                }
+            });
+            return out;
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        window.FB = {
+            ready: true,
+            supabase: supabase,
 
-        // ✅ FIXED: Clean object definition. Do NOT paste the signature variables here.
-       window.FB = {
-    app, db, auth,
-    collection, doc, getDoc, getDocs, setDoc, addDoc,
-    updateDoc, deleteDoc, query, where, orderBy, limit,
-    serverTimestamp, Timestamp,
-    ready: false
-};
+            collection: (db, table) => ({ _type: 'col', table }),
+            doc: (db, table, id) => ({ _type: 'doc', table, id: String(id) }),
+            where: (field, op, val) => ({ _type: 'where', field, op, val }),
+            orderBy: (field, dir) => ({ _type: 'order', field, dir }),
+            limit: (n) => ({ _type: 'limit', n }),
+            query: (colRef, ...constraints) => ({ _type: 'query', colRef, constraints }),
+            serverTimestamp: () => new Date().toISOString(),
 
-signInAnonymously(auth)
-    .then(() => {
-        window.FB.ready = true;
-        console.log("✅ Firebase initialized & Anonymous Auth successful");
-    })
-    .catch((error) => {
-        console.error("❌ Anonymous Auth failed:", error);
-    })
-    .finally(() => {
+            getDocs: async (q) => {
+                const table = q._type === 'query' ? q.colRef.table : q.table;
+                let qb = supabase.from(table).select('*');
+                if (q._type === 'query') {
+                    q.constraints.forEach(c => {
+                        if (c._type === 'where') {
+                            const v = clean(c.val);
+                            if (c.op === '==') qb = qb.eq(c.field, v);
+                            else if (c.op === '!=') qb = qb.neq(c.field, v);
+                            else if (c.op === '>') qb = qb.gt(c.field, v);
+                            else if (c.op === '>=') qb = qb.gte(c.field, v);
+                            else if (c.op === '<') qb = qb.lt(c.field, v);
+                            else if (c.op === '<=') qb = qb.lte(c.field, v);
+                            else if (c.op === 'in') qb = qb.in(c.field, v);
+                        }
+                        if (c._type === 'order') qb = qb.order(c.field, { ascending: c.dir === 'asc' });
+                        if (c._type === 'limit') qb = qb.limit(c.n);
+                    });
+                }
+                const { data, error } = await qb;
+                if (error) throw error;
+                const docs = (data || []).map(d => ({
+                    id: d.id,
+                    ref: { _type: 'doc', table, id: d.id },
+                    data: () => d,
+                    exists: () => true
+                }));
+                return {
+                    docs,
+                    forEach: function (cb) { docs.forEach(d => cb(d)); },
+                    empty: docs.length === 0,
+                    size: docs.length
+                };
+            },
+
+            getDoc: async (d) => {
+                const { data, error } = await supabase.from(d.table).select('*').eq('id', d.id).maybeSingle();
+                if (error) throw error;
+                return { exists: () => !!data, data: () => data || {}, id: d.id };
+            },
+
+            addDoc: async (col, data) => {
+                const payload = cleanPayload(data);
+                if (!payload.id) payload.id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+                const { error } = await supabase.from(col.table).insert([payload]);
+                if (error) throw error;
+                return { id: payload.id };
+            },
+
+            // THE FIX: merge = UPDATE first, INSERT only if the row doesn't exist
+            setDoc: async (d, data, opts) => {
+                const payload = cleanPayload(data);
+                delete payload.id;
+                if (opts && opts.merge) {
+                    const { data: upd, error: e1 } = await supabase
+                        .from(d.table).update(payload).eq('id', d.id).select('id');
+                    if (e1) throw e1;
+                    if (upd && upd.length) return true;
+                }
+                const { error } = await supabase.from(d.table).upsert({ ...payload, id: d.id });
+                if (error) throw error;
+                return true;
+            },
+
+            updateDoc: async (d, data) => {
+                const payload = cleanPayload(data);
+                delete payload.id;
+                const { error } = await supabase.from(d.table).update(payload).eq('id', d.id);
+                if (error) throw error;
+                return true;
+            },
+
+            deleteDoc: async (d) => {
+                const { error } = await supabase.from(d.table).delete().eq('id', d.id);
+                if (error) throw error;
+                return true;
+            }
+        };
+
+        // Dispatch the ready event so the app knows the database is connected
         window.dispatchEvent(new Event('firebase-ready'));
-    });
+        console.log("✅ Supabase initialized & Adapter ready");
 
 // ==========================================
-// FIREBASE PUSH NOTIFICATIONS SETUP
+// PUSH NOTIFICATIONS (Supabase Poller handles this)
 // ==========================================
 window.setupPushNotifications = async function(userName) {
-    try {
-        const messaging = getMessaging(app);
-        
-        // Ask the user for permission
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            console.log('Notification permission denied.');
-            return;
-        }
-
-        // --- IMPORTANT ---
-        // Replace the string below with your actual VAPID Key from Firebase Console!
-        const VAPID_KEY = 'BNY_FRg4V6MzEuEaLiCZvFRFC7jrFh1d1HyREwCBZBCn4-Vd3hu-O_a2ykTeAynOs6vBCkqWLvttr20KkI1GtFM'; 
-
-        const currentToken = await getToken(messaging, { 
-            vapidKey: VAPID_KEY,
-            serviceWorkerRegistration: await navigator.serviceWorker.ready
-        });
-
-        if (currentToken) {
-            console.log('FCM Token:', currentToken);
-            
-            // Save this token to Firestore for the logged-in user
-            if (userName) {
-    const docId = String(userName).replace(/\s+/g, '_').replace(/[^A-Za-z0-9_\-\.]/g, '');
-    await window.FB.setDoc(
-        window.FB.doc(window.FB.db, 'users', docId),
-                    { fcmToken: currentToken }, 
-                    { merge: true }
-                );
-                console.log('✅ FCM Token saved to user profile!');
-            }
-        }
-    } catch (err) {
-        console.error('Error getting FCM token: ', err);
-    }
+    console.log("Push notifications handled by Supabase Realtime/Poller.");
 };
-
-// Listen for messages when the app is OPEN (foreground)
-try {
-    const messaging = getMessaging(app);
-    onMessage(messaging, (payload) => {
-        console.log('Foreground message received: ', payload);
-        // Show a toast if you have a toast function, otherwise alert
-        if (typeof toast === 'function') {
-            toast(payload.notification.title + ': ' + payload.notification.body, 'info');
-        } else {
-            alert(payload.notification.title + '\n' + payload.notification.body);
-        }
-    });
-} catch(e) {}
     </script>
     <style>
         * {
@@ -3766,8 +3802,8 @@ try {
                     <div id="checklistPreview">
                         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
                             <div style="flex:1;min-width:200px;">
-                                <div style="font-weight:700;color:#12405e;margin-bottom:6px;font-size:1.05rem;">Ready to inspect this refrigerator?</div>
-                                <div style="font-size:.88rem;color:#5b7b96;">15 items across 3 sections: Cleaning · Temperature · Doors</div>
+                                <div id="checklistPreviewTitle" style="font-weight:700;color:#12405e;margin-bottom:6px;font-size:1.05rem;">Ready to inspect this equipment?</div>
+                                <div id="checklistPreviewSub" style="font-size:.88rem;color:#5b7b96;">Loading checklist information...</div>
                             </div>
                             <button type="button" class="btn-primary" id="startChecklistBtn" style="padding:14px 32px;">
                                 📝 Start / Continue Inspection
@@ -3781,7 +3817,7 @@ try {
                             <div style="height:10px;background:#d4e3ef;border-radius:6px;overflow:hidden;">
                                 <div id="checklistProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1e4a6d,#2a6b96);transition:width .3s ease;border-radius:6px;"></div>
                             </div>
-                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                            <div id="checklistChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
                                 <span class="checklist-mini-chip" id="chipClean">🧼 0 / 5</span>
                                 <span class="checklist-mini-chip" id="chipTemp">🌡️ 0 / 5</span>
                                 <span class="checklist-mini-chip" id="chipDoor">🚪 0 / 5</span>
@@ -4352,6 +4388,9 @@ try {
                             Refresh</button>
                         <button class="btn-secondary" id="ttViewTeamTodayBtn"
                             style="padding:10px 20px;font-size:.88rem;">👁️ View Team Availability Today</button>
+                        <button class="btn-primary" id="ttBulkImportBtn" style="padding:10px 20px;font-size:.88rem;background:#f4a300;">
+                            📥 Bulk Import Monthly Schedule (Excel)
+                        </button>
                     </div>
                     <div id="ttTechList">
                         <div class="info-loading" style="text-align:center;padding:20px;color:#9cb9d0;">⏳ Loading…</div>
@@ -4973,6 +5012,8 @@ try {
                     <option value="technician">👨‍🔧 Technician</option>
                     <option value="incharge">👔 In-Charge</option>
                     <option value="assetsmanager">🗑️ Assets Manager</option>
+                    <!-- ✅ HIDDEN ADMIN OPTION -->
+                    <option value="supervisor" id="adminRoleOption" style="display:none;">👑 Admin / Manager</option>
                 </select>
             </div>
             <div class="field-group" style="text-align:left;" id="loginTechGroup">
@@ -5153,8 +5194,8 @@ try {
                 </div>
             </div>
             <div class="grid-3-wide" style="grid-template-columns:1fr 1fr;gap:16px;">
-                <div class="field-group"><label for="newRefTag">Tag Number / ID *</label><input type="text"
-                        id="newRefTag" placeholder="e.g. CHUB/FRG/001"></div>
+                <div class="field-group"><label for="newRefTag">Tag Number / ID (Optional)</label><input type="text"
+                        id="newRefTag" placeholder="Leave blank if no tag exists"></div>
                 <div class="field-group"><label for="newRefDept">Department *</label><select id="newRefDept"></select>
                 </div>
             </div>
@@ -5245,7 +5286,7 @@ try {
                 </div>
             </div>
             <div class="grid-3-wide" style="grid-template-columns:1fr 1fr;gap:16px;">
-                <div class="field-group"><label for="editRefTag">Tag *</label><input type="text" id="editRefTag"></div>
+                <div class="field-group"><label for="editRefTag">Tag (Optional)</label><input type="text" id="editRefTag"></div>
                 <div class="field-group"><label for="editRefDept">Department *</label><select id="editRefDept"></select>
                 </div>
             </div>
@@ -5493,6 +5534,29 @@ try {
             <div class="modal-actions">
                 <button class="btn-cancel" id="manageScheduleCancel">Close</button>
                 <button class="btn-go" id="manageScheduleSave" style="background:#1b6b3f;">💾 Save Schedule</button>
+            </div>
+        </div>
+    </div>
+        <!-- ============ BULK SCHEDULE IMPORT MODAL ============ -->
+    <div class="modal-overlay" id="bulkScheduleModal">
+        <div class="modal-box" style="max-width:650px;">
+            <h2>📥 Bulk Import Monthly Schedule</h2>
+            <p style="font-size:.88rem;color:#5b7b96;margin-bottom:14px;">
+                Copy the schedule from Excel (Name + Days 1 to 30) and paste it below. 
+                The system will automatically read the codes (A, GN, R, CA, etc.) and update everyone's availability.
+            </p>
+            <div class="field-group">
+                <label>Month Start Date *</label>
+                <input type="date" id="bulkScheduleMonth" style="width:100%;padding:10px;border-radius:12px;border:1px solid #cfdfeb;">
+            </div>
+            <div class="field-group">
+                <label>Paste Excel Data Here *</label>
+                <textarea id="bulkScheduleData" class="remark-input" rows="10" placeholder="FELICIEN	GN	R	A	A	GN	R...&#10;HILLALY	R	A	A	GN	R	A...&#10;KAMANAYO	R	A	A	A	R	A..." style="font-family:monospace;font-size:0.85rem;"></textarea>
+            </div>
+            <div id="bulkScheduleError" style="color:#b33a3a;font-size:.85rem;min-height:18px;"></div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="bulkScheduleCancel">Cancel</button>
+                <button class="btn-go" id="bulkScheduleSaveBtn" style="background:#1b6b3f;">💾 Import & Update Availability</button>
             </div>
         </div>
     </div>
@@ -6050,6 +6114,18 @@ try {
         (function () {
             'use strict';
 
+            // 🔒 SECURITY: Refuse to run over plain HTTP (except local dev)
+            if (location.protocol !== 'https:' &&
+                location.hostname !== 'localhost' &&
+                location.hostname !== '127.0.0.1') {
+                document.body.innerHTML =
+                    '<div style="padding:40px;text-align:center;font-family:sans-serif;max-width:500px;margin:80px auto;">' +
+                    '<h1 style="color:#b33a3a;">🔒 Insecure Connection</h1>' +
+                    '<p>This application requires HTTPS. Please open the secure URL.</p>' +
+                    '</div>';
+                throw new Error('HTTPS required for security');
+            }
+
             /* ============================================================
                CONSTANTS
                ============================================================ */
@@ -6239,7 +6315,15 @@ const AC_PM_INTERVAL_MONTHS = 6;
                 if (!select) return;
                 const isNew = select.id === 'newRefType';
                 const manualInput = document.getElementById(isNew ? 'newRefTypeManual' : 'editRefTypeManual');
-                const isBioUser = isBiomedicalUser();
+
+                // ── Determine context from the department the user picked in the form,
+                //    NOT from the user's own account. Lets Assets Manager / Supervisor /
+                //    Infra tech reuse the biomedical flow when adding equipment to the
+                //    Biomedical department.
+                const deptSelId = isNew ? 'newRefDept' : 'editRefDept';
+                const deptSel = document.getElementById(deptSelId);
+                const selectedDept = deptSel ? deptSel.value : '';
+                const isBioDept = normalizeText(selectedDept) === normalizeText(BIOMEDICAL_DEPT_NAME);
 
                 // 🔓 Assets Manager always types the type manually — no dropdown, no PM checklists.
                 if (currentRole === 'assetsmanager') {
@@ -6252,8 +6336,12 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     return;
                 }
 
-                // 🔒 Biomedical users: dropdown of existing names + "Type new…" (works for biomedical AND Other)
-                if (isBioUser && (category === 'biomedical' || category === 'equipment')) {
+                const isBioUser = isBiomedicalUser();
+
+                // 🔒 Biomedical flow: use it when the category is biomedical/equipment AND
+                //    EITHER the department is Biomedical OR the user is a biomedical user.
+                //    This makes BMET able to add biomedical equipment to ANY department.
+                if ((category === 'biomedical' || category === 'equipment') && (isBioDept || isBioUser)) {
                     select.style.display = 'block';
                     if (manualInput) manualInput.style.display = 'none';
 
@@ -6293,6 +6381,7 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     return;
                 }
 
+                // ── Generic flow (Fridge / AC / Electrical / for non-BMET: Other)
                 if (manualInput) manualInput.style.display = 'none';
                 select.style.display = 'block';
 
@@ -6303,6 +6392,25 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     o.value = t; o.textContent = t;
                     select.appendChild(o);
                 });
+
+                // ✍️ BMET can always type a custom type — add a "Type custom name…" option
+                if (isBioUser && manualInput) {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = '__NEW__';
+                    newOpt.textContent = '➕ Type a custom name…';
+                    select.appendChild(newOpt);
+
+                    select.onchange = () => {
+                        if (select.value === '__NEW__') {
+                            manualInput.style.display = 'block';
+                            manualInput.value = '';
+                            manualInput.focus();
+                        } else {
+                            manualInput.style.display = 'none';
+                            manualInput.value = '';
+                        }
+                    };
+                }
             }
             const DEFAULT_DEPARTMENTS = {
                 'Laboratory': { defaultIncharge: 'Laboratory In-Charge', services: ['Genetics', 'Hematology', 'Biochemistry', 'Parasitology', 'TB', 'TB-service', 'Sterilization', 'Lab sterilization', 'Molecular Pre-PCR', 'PRE-PCR', 'Molecular Post-PCR', 'Molecular clean room', 'Immunology', 'Immunoserology', 'Culture Media', 'Direct Examination', 'Microbiology', 'Bacteriology', 'Anatomical', 'Pathology', 'Grossing Room', 'Embedding Room', 'Staining Room', 'Refrigerators Room', 'Fridge room', 'Stock Consumables', 'store service', "Doctor's Office – Pathology", 'Lab UPS Room', 'Old lab server-room', 'Cold chain fridge room', 'Sample Storage Room 1', 'Vaccine Room', 'Reagent Room', 'Freezer Bay'] },
@@ -6485,8 +6593,16 @@ const AC_PM_INTERVAL_MONTHS = 6;
                     .trim()
                     .toUpperCase();
             }
-            function escapeHtml(s) {
-                if (s == null) return '';
+            function safeImageUrl(url) {
+    // Allow only data:image/... or https:// URLs. Blocks javascript:, onerror=, etc.
+    if (!url) return '';
+    const s = String(url).trim();
+    if (/^data:image\/(png|jpe?g|webp|gif|bmp);base64,[A-Za-z0-9+/=]+$/i.test(s)) return s;
+    if (/^https:\/\/[^\s"'<>]+$/i.test(s)) return s;
+    return '';
+}
+function escapeHtml(s) {
+    if (s == null) return '';
                 return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             }
             function sameOwner(a, b) { return normalizeText(a) === normalizeText(b); }
@@ -7238,7 +7354,7 @@ const AC_PM_INTERVAL_MONTHS = 6;
         
         const q = window.FB.query(
             window.FB.collection(window.FB.db, 'equipment'),
-            window.FB.limit(200) // Reduced to 200 to save reads
+            window.FB.limit(100) // ✅ OPTIMIZED: Reduced to 100 for faster loading & less bandwidth
         );
         const snap = await window.FB.getDocs(q);
         
@@ -7334,15 +7450,31 @@ const AC_PM_INTERVAL_MONTHS = 6;
                 invalidateCache('equipment');
                 return { id: docId, ok: true };
             }
-            async function saveEquipmentPhoto(docId, dataUrl) {
-                if (!docId) return false;
+                       async function saveEquipmentPhoto(docId, dataUrl) {
+                if (!docId || !dataUrl) return false;
                 try {
+                    // Convert base64 to blob
+                    const res = await fetch(dataUrl);
+                    const blob = await res.blob();
+                    
+                    // Upload to Supabase Storage
+                    const fileName = `equipment/${docId}_${Date.now()}.jpg`;
+                    const { data, error } = await window.FB.supabase.storage.from('public_files').upload(fileName, blob);
+                    
+                    if (error) throw error;
+                    
+                    // Get public URL
+                    const { data: urlData } = window.FB.supabase.storage.from('public_files').getPublicUrl(fileName);
+                    
+                    // Save URL to database
                     await window.FB.updateDoc(window.FB.doc(window.FB.db, 'equipment', docId), {
-                        photo: dataUrl || '',
-                        updatedAt: window.FB.serverTimestamp()
+                        photo: urlData.publicUrl
                     });
                     return true;
-                } catch (e) { return false; }
+                } catch (e) { 
+                    console.error('Photo upload failed:', e);
+                    return false; 
+                }
             }
 
             /* ============================================================
@@ -7588,7 +7720,7 @@ bioItemTexts: Array.isArray(data.bioItemTexts) ? data.bioItemTexts : [],
         const q = window.FB.query(
             window.FB.collection(window.FB.db, 'pmLogs'),
             window.FB.orderBy('timestamp', 'desc'),
-            window.FB.limit(500)
+            window.FB.limit(150) // ✅ OPTIMIZED: Reduced to 150. (Use the PDF date-filter to get older ones)
         );
         const snap = await window.FB.getDocs(q);
         
@@ -7667,7 +7799,7 @@ bioItemTexts: Array.isArray(data.bioItemTexts) ? data.bioItemTexts : [],
             let REF_FILTERED = [];
             let ALL_INVENTORY = [];
             // ===== FIRESTORE CACHE (PERSISTENT) =====
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const CACHE_PREFIX = 'chub_fb_cache_';
 
 function getCached(key) {
@@ -7762,10 +7894,10 @@ async function fetchBioChecklist(type) {
     if (!key) return null;
     if (BIO_CHECKLIST_CACHE[key]) return BIO_CHECKLIST_CACHE[key];
     try {
-        if (!await _waitForFB()) return null;
-        const snap = await window.FB.getDoc(window.FB.doc(window.FB.db, BIO_CHECKLIST_COLLECTION, key));
-        if (!snap.exists()) return null;
-        const d = snap.data() || {};
+        // ✅ FIX: Fetch from the 'config' table which is guaranteed to exist
+        const raw = await firestoreConfigGet('BioChecklist_' + key);
+        if (!raw) return null;
+        const d = JSON.parse(raw);
         const items = Array.isArray(d.items) ? d.items.map(String).filter(Boolean) : [];
         if (!items.length) return null;
         const out = { key, typeName: d.typeName || type, items, updatedBy: d.updatedBy || '' };
@@ -7776,9 +7908,11 @@ async function fetchBioChecklist(type) {
 async function saveBioChecklist(type, items) {
     const key = bioTypeKey(type);
     if (!key || !items.length) return false;
-    await window.FB.setDoc(window.FB.doc(window.FB.db, BIO_CHECKLIST_COLLECTION, key), {
-        typeName: type, items, updatedBy: currentLoggedInName, updatedAt: window.FB.serverTimestamp()
-    }, { merge: true });
+    
+    // ✅ FIX: Save to the 'config' table which works on Supabase
+    const success = await firestoreConfigSet('BioChecklist_' + key, JSON.stringify({ typeName: type, items, updatedBy: currentLoggedInName }));
+    if (!success) throw new Error('Database save failed. Please check your connection.');
+    
     BIO_CHECKLIST_CACHE[key] = { key, typeName: type, items, updatedBy: currentLoggedInName };
     return true;
 }
@@ -7793,6 +7927,73 @@ function isBiomedicalUser() {
         return ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
     }
     return false;
+}
+
+// ✅ Async, hardened version — falls back to Firestore when the in-memory
+//    user record is missing (e.g. after a cache reset) so a Biomedical
+//    technician ALWAYS sees the "Biomedical Equipment" category in the
+//    Add / Edit Equipment modal.
+async function isUserBiomedicalAsync() {
+    if (currentRole === 'head_biomedical') return true;
+    if (currentRole === 'incharge') {
+        return normalizeText(currentInchargeDept) === normalizeText(BIOMEDICAL_DEPT_NAME);
+    }
+    if (!currentLoggedInName) return false;
+    let u = LIVE_USERS[currentLoggedInName];
+    if (!u) {
+        try {
+            USERS_CACHE = null;
+            const fresh = await loadUsersFromFirestore();
+            LIVE_USERS = fresh;
+            u = fresh[currentLoggedInName];
+        } catch (e) { /* offline — fall through */ }
+    }
+    if (!u) return false;
+    const ds = (Array.isArray(u.depts) && u.depts.length) ? u.depts : (u.dept ? [u.dept] : []);
+    return ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
+}
+
+// ✅ Category options follow the SELECTED DEPARTMENT (not the user's own dept).
+//    prefix is 'newRef' (Add modal) or 'editRef' (Edit modal).
+async function applyCategoryFilterByDept(prefix) {
+    const catSel  = document.getElementById(prefix + 'Category');
+    const deptSel = document.getElementById(prefix + 'Dept');
+    if (!catSel || !deptSel) return;
+
+    const dept      = deptSel.value || '';
+    const isBioDept = normalizeText(dept) === normalizeText(BIOMEDICAL_DEPT_NAME);
+    const isBioUser = isBiomedicalUser();
+
+    Array.from(catSel.options).forEach(opt => {
+        if (isBioDept) {
+            // Biomedical department: Biomedical equipment + Other only
+            opt.style.display = (opt.value === 'biomedical' || opt.value === 'equipment') ? 'block' : 'none';
+        } else if (isBioUser) {
+            // 🏥 BMET adding to another department: keep Biomedical Equipment visible too
+            opt.style.display = (
+                opt.value === 'fridge' ||
+                opt.value === 'ac' ||
+                opt.value === 'electrical' ||
+                opt.value === 'biomedical' ||
+                opt.value === 'equipment'
+            ) ? 'block' : 'none';
+        } else {
+            // Any other department (non-bio user): Fridge, AC, Electrical, Other (no Biomedical)
+            opt.style.display = (opt.value === 'fridge' || opt.value === 'ac' || opt.value === 'electrical' || opt.value === 'equipment') ? 'block' : 'none';
+        }
+    });
+
+    // If the current selection is now hidden, pick a sensible default
+    const visibleOpts = Array.from(catSel.options).filter(o => o.style.display !== 'none');
+    if (!visibleOpts.some(o => o.value === catSel.value)) {
+        catSel.value = isBioDept ? 'biomedical' : (visibleOpts[0] ? visibleOpts[0].value : 'equipment');
+    }
+
+    // Rebuild the type dropdown + biomedical checklist block for the new category
+    await populateTypeSelect(document.getElementById(prefix + 'Type'), catSel.value);
+    if (prefix === 'newRef' && typeof refreshBioChecklistBlock === 'function') {
+        refreshBioChecklistBlock(true);
+    }
 }
 function equipIsBiomedical(item) {
     return (item.equipCategory || getCategoryForType(item.type)) === 'biomedical';
@@ -7846,15 +8047,17 @@ async function fetchExistingBiomedicalTypes(forceRefresh) {
             }
         });
     } catch (e) {}
-    // From the biomedical checklists collection in Firestore
+    // From the biomedical checklists saved in config
     try {
-        if (await _waitForFB()) {
-            const snap = await window.FB.getDocs(window.FB.collection(window.FB.db, 'biomedChecklists'));
-            snap.forEach(doc => {
-                const d = doc.data() || {};
-                if (d.typeName) types.add(d.typeName);
-            });
-        }
+        const cfg = await firestoreConfigGetAll();
+        Object.keys(cfg).forEach(k => {
+            if (k.startsWith('BioChecklist_')) {
+                try {
+                    const d = JSON.parse(cfg[k]);
+                    if (d.typeName) types.add(d.typeName);
+                } catch(e) {}
+            }
+        });
     } catch (e) {}
     BIOMEDICAL_TYPES_CACHE = Array.from(types).sort();
     BIOMEDICAL_TYPES_CACHE_TS = Date.now();
@@ -7879,15 +8082,24 @@ function getSelectedRefType(prefix) {
             async function refreshBioChecklistBlock(reset) {
                 const catEl = document.getElementById('newRefCategory');
                 const wrap = document.getElementById('newRefBioChecklistWrap');
-                if (!catEl || !wrap) return;
+                const deptEl = document.getElementById('newRefDept');
+                if (!catEl || !wrap || !deptEl) return;
                 // 🔓 Assets Manager doesn't need to see PM checklists when adding equipment.
                 if (currentRole === 'assetsmanager') {
                     wrap.style.display = 'none';
                     return;
                 }
+                const selectedDept = deptEl.value || '';
+                const isBioDept = normalizeText(selectedDept) === normalizeText(BIOMEDICAL_DEPT_NAME);
                 const isBioCat = catEl.value === 'biomedical';
-                wrap.style.display = isBioCat ? 'block' : 'none';
-                if (!isBioCat) return;
+                const isBioUser = isBiomedicalUser();
+                // Show the checklist when the category is biomedical AND
+                // (the department is Biomedical OR the user is a biomedical user).
+                if (!isBioCat || (!isBioDept && !isBioUser)) {
+                    wrap.style.display = 'none';
+                    return;
+                }
+                wrap.style.display = 'block';
     const ta = document.getElementById('newRefBioChecklist');
     const hint = document.getElementById('newRefBioChecklistHint');
     if (reset) { ta.value = ''; ta.dataset.loadedKey = ''; ta.dataset.fromExisting = ''; hint.textContent = 'Type one checklist item per line.'; }
@@ -7913,13 +8125,11 @@ document.getElementById('newRefTypeManual')?.addEventListener('input', () => {
     clearTimeout(window.__bioTmr);
     window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 450);
 });
-// ✅ When a biomedical user picks an EXISTING type from the dropdown,
-//    load its checklist automatically (without needing to type).
+// ✅ When the user picks an EXISTING type from the dropdown,
+//    load its checklist automatically (whether or not they are biomedical).
 document.getElementById('newRefType')?.addEventListener('change', () => {
-    if (isBiomedicalUser()) {
-        clearTimeout(window.__bioTmr);
-        window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 300);
-    }
+    clearTimeout(window.__bioTmr);
+    window.__bioTmr = setTimeout(() => refreshBioChecklistBlock(false), 300);
 });
 
 /* PM form: build tick list for the selected biomedical unit */
@@ -7934,6 +8144,13 @@ async function renderBioChecklistForRef(ref) {
     box.innerHTML = '<div class="info-loading">⏳ Loading checklist…</div>';
     const cl = await fetchBioChecklist(ref.type);
     if (REF_FILTERED[refSelect.value] !== ref) return;      // user switched equipment meanwhile
+    
+    // ✅ Update the preview text when the checklist loads
+    const subEl = document.getElementById('checklistPreviewSub');
+    if (cl && subEl) {
+        subEl.textContent = `Custom checklist loaded: ${cl.items.length} items for ${ref.type}`;
+    }
+
     if (!cl) {
         box.innerHTML = `<div style="font-size:.88rem;color:#7a5300;margin-bottom:8px;">No checklist defined yet for <strong>${escapeHtml(ref.type)}</strong>. Write one item per line and save — it will be reused for every unit of this type.</div>
             <textarea id="bioNewChecklistText" class="remark-input" rows="6"></textarea>
@@ -7941,8 +8158,21 @@ async function renderBioChecklistForRef(ref) {
         document.getElementById('bioSaveChecklistBtn').onclick = async () => {
             const items = parseChecklistLines(document.getElementById('bioNewChecklistText').value);
             if (!items.length) { toast('Enter at least one item.', 'warn'); return; }
-            await saveBioChecklist(ref.type, items);
-            renderBioChecklistForRef(ref);
+            
+            const btn = document.getElementById('bioSaveChecklistBtn');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '⏳ Saving...';
+            btn.disabled = true;
+            
+            try {
+                await saveBioChecklist(ref.type, items);
+                toast('✅ Checklist saved successfully!', 'success');
+                renderBioChecklistForRef(ref);
+            } catch (e) {
+                toast('⚠️ Failed to save checklist: ' + e.message, 'error');
+                btn.innerHTML = orig;
+                btn.disabled = false;
+            }
         };
         updateChecklistProgress();
         return;
@@ -8257,17 +8487,18 @@ updateWorkDateDisplay();
                 // Compute next PM DUE date from last service (or fallback for never-serviced)
                 let nextDue = null;
                 try {
-                    const logs = await fetchAllLogs();
-                    const targetId = buildRefIdentity(ref);
-                    const myLogs = logs.filter(r => {
-                        const rid = buildRefIdentity({
-                            refTag: r.refTag || r['Ref Tag'],
-                            refLocation: r.refLocation || r['Location'],
-                            refSerial: r.refSerial || r['Serial Number'],
-                            refModel: r.refModel || r['Model']
+                    // ✅ OPTIMIZATION: Only fetch the logs for THIS specific equipment, not all 500 logs.
+                    let myLogs = [];
+                    if (window.FB && window.FB.ready) {
+                        const snap = await window.FB.getDocs(window.FB.query(
+                            window.FB.collection(window.FB.db, 'pmLogs'),
+                            window.FB.where('refTag', '==', ref.tag)
+                        ));
+                        snap.forEach(doc => {
+                            myLogs.push(mapFirestorePmLog(doc.id, doc.data()));
                         });
-                        return rid === targetId;
-                    }).sort((a, b) => recordTime(b) - recordTime(a));
+                        myLogs.sort((a, b) => recordTime(b) - recordTime(a));
+                    }
 
                     if (myLogs.length > 0) {
                         const lastDate = safeStr(myLogs[0].workDate || myLogs[0]['Work Date']);
@@ -8421,6 +8652,25 @@ renderBioChecklistForRef(cat === 'biomedical' ? ref : null);
                     }
                 }
                 
+                // ✅ DYNAMIC PREVIEW TEXT BASED ON EQUIPMENT TYPE
+                const titleEl = document.getElementById('checklistPreviewTitle');
+                const subEl = document.getElementById('checklistPreviewSub');
+                const chipsEl = document.getElementById('checklistChips');
+
+                if (cat === 'fridge') {
+                    if (titleEl) titleEl.textContent = 'Ready to inspect this refrigerator?';
+                    if (subEl) subEl.textContent = '15 items across 3 sections: Cleaning · Temperature · Doors';
+                    if (chipsEl) chipsEl.style.display = 'flex';
+                } else if (cat === 'ac') {
+                    if (titleEl) titleEl.textContent = 'Ready to inspect this air conditioner?';
+                    if (subEl) subEl.textContent = '15 items across 3 sections: Airflow · Electrical · Drainage';
+                    if (chipsEl) chipsEl.style.display = 'flex';
+                } else if (cat === 'biomedical' || cat === 'equipment' || cat === 'electrical') {
+                    if (titleEl) titleEl.textContent = `Ready to inspect this ${ref.type || 'equipment'}?`;
+                    if (subEl) subEl.textContent = `Custom checklist based on equipment type: ${ref.type}`;
+                    if (chipsEl) chipsEl.style.display = 'none'; // Hide the 15-item chips for biomedical
+                }
+
                 // 3. Update progress tracker
                 if (typeof updateChecklistProgress === 'function') updateChecklistProgress();
                 if (refWorkingStatus) {
@@ -8631,48 +8881,33 @@ filterOwnerSelectForDomain(document.getElementById('newRefOwner'));
                 document.getElementById('addRefOwnerName').textContent = currentLoggedInName || '—';
                 populateDepartmentSelect();
                 
-                // 🔒 Filter categories based on user's department
-                let isBio = false;
-                if (currentRole === 'head_biomedical') isBio = true;
-                else if (currentRole === 'technician') {
-                    const u = LIVE_USERS[currentLoggedInName];
-                    if (u) {
-                        const depts = Array.isArray(u.depts) ? u.depts : (u.dept ? [u.dept] : []);
-                        isBio = depts.some(d => normalizeText(d) === normalizeText('Biomedical'));
-                    }
-                } else if (currentRole === 'incharge' && currentInchargeDept) {
-                    isBio = normalizeText(currentInchargeDept) === normalizeText('Biomedical');
+                // 🏢 Any technician can add equipment to ANY department. The department
+                //    dropdown is always enabled; the category options below follow the
+                //    SELECTED department (not the user's own).
+                const _deptSelEl = document.getElementById('newRefDept');
+                if (_deptSelEl && !_deptSelEl.dataset.filterListenerAdded) {
+                    _deptSelEl.dataset.filterListenerAdded = '1';
+                    _deptSelEl.addEventListener('change', () => applyCategoryFilterByDept('newRef'));
                 }
 
-                const _catSel = document.getElementById('newRefCategory');
-                Array.from(_catSel.options).forEach(opt => {
-                    if (isBio) {
-                        opt.style.display = (opt.value === 'biomedical' || opt.value === 'equipment') ? 'block' : 'none';
-                    } else {
-                        opt.style.display = (opt.value === 'fridge' || opt.value === 'ac' || opt.value === 'electrical' || opt.value === 'equipment') ? 'block' : 'none';
-                        if (currentRole === 'supervisor' || currentRole === 'assetsmanager') opt.style.display = 'block';
+                // First-ever open in this session: pre-select the technician's OWN
+                // department, but allow them to change it freely.
+                if (currentRole === 'technician' && _deptSelEl && !_deptSelEl.dataset.defaultApplied) {
+                    _deptSelEl.dataset.defaultApplied = '1';
+                    const _u = LIVE_USERS[currentLoggedInName];
+                    if (_u) {
+                        const _ds = Array.isArray(_u.depts) && _u.depts.length ? _u.depts : (_u.dept ? [_u.dept] : []);
+                        const _ownDept = _ds.find(d => DEPARTMENTS[d]);
+                        if (_ownDept) _deptSelEl.value = _ownDept;
                     }
-                });
-                if (_catSel.selectedOptions.length === 0 || _catSel.selectedOptions[0].style.display === 'none') {
-                    const firstVisible = Array.from(_catSel.options).find(opt => opt.style.display !== 'none');
-                    if (firstVisible) _catSel.value = firstVisible.value;
                 }
-                if (isBio) {
-                    // ✅ Show BOTH "Biomedical Equipment" and "Other" (not forced into biomedical-only)
-                    Array.from(_catSel.options).forEach(opt => {
-                        opt.style.display = (opt.value === 'biomedical' || opt.value === 'equipment') ? 'block' : 'none';
-                    });
-                    if (!_catSel.value || (_catSel.value !== 'biomedical' && _catSel.value !== 'equipment')) {
-                        _catSel.value = 'biomedical';
-                    }
-                    deptSel.value = BIOMEDICAL_DEPT_NAME;
-                    deptSel.disabled = true;
-                }
+
                 // 🔓 Assets Manager always starts with a fresh manual type input.
                 const _newTypeManual = document.getElementById('newRefTypeManual');
                 if (currentRole === 'assetsmanager' && _newTypeManual) _newTypeManual.value = '';
-                await populateTypeSelect(document.getElementById('newRefType'), _catSel.value);
-                refreshBioChecklistBlock(true);
+
+                // Filter the category list + rebuild type dropdown & checklist block
+                await applyCategoryFilterByDept('newRef');
                 document.getElementById('dupWarning').classList.remove('show');
                 const wg = document.querySelector('#newRefWorkingGroup input[value="Working"]');
                 if (wg) wg.checked = true;
@@ -8705,21 +8940,38 @@ filterOwnerSelectForDomain(document.getElementById('newRefOwner'));
                 const ws = (document.querySelector('#newRefWorkingGroup input:checked') || {}).value || 'Working';
                 const lastPmDate = document.getElementById('newRefLastPm').value || '';
                 const nextPmDate = document.getElementById('newRefNextPm').value || '';
-                if (!tag || !dept || !loc || !brand || !model || !equipName) { alert('Please fill in all required fields (including Equipment Name).'); return; }
+                if (!dept || !loc || !brand || !model || !equipName) { 
+                    alert('Please fill in all required fields (Department, Location, Brand, Model, Equipment Name).'); 
+                    return; 
+                }
+                
+                // ✅ AUTO-GENERATE TAG IF BLANK
+                let finalTag = tag;
+                if (!finalTag) {
+                    finalTag = 'AUTO-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+                }
 const _catChosen = document.getElementById('newRefCategory').value;
 const _isBioDept = normalizeText(dept) === normalizeText(BIOMEDICAL_DEPT_NAME);
-if (_catChosen === 'biomedical' && !_isBioDept) {
-    alert('Biomedical equipment must be saved under the Biomedical department.');
+const _isBioUser = isBiomedicalUser();
+
+// Biomedical equipment can be saved by a BMET to ANY department.
+// Non-bio users must save it under the Biomedical department.
+if (_catChosen === 'biomedical' && !_isBioDept && !_isBioUser) {
+    alert('Biomedical equipment can only be saved by Biomedical staff or under the Biomedical department.');
     return;
 }
 if (_isBioDept && _catChosen !== 'biomedical' && _catChosen !== 'equipment') {
     alert('Only Biomedical or Other equipment can be saved in the Biomedical department (no air conditioners / refrigerators).');
     return;
 }
+
 let _bioItems = [];
-if (_catChosen === 'biomedical' && isBiomedicalUser()) {
+if (_catChosen === 'biomedical' && (_isBioDept || _isBioUser)) {
     _bioItems = parseChecklistLines(document.getElementById('newRefBioChecklist').value);
-    if (!_bioItems.length) { alert('Please enter at least one checklist item for this equipment type.'); return; }
+    if (!_bioItems.length) {
+        alert('Please enter at least one checklist item for this equipment type.');
+        return;
+    }
 }
                 let owner;
                 if (currentRole === 'assetsmanager' || currentRole === 'supervisor' || currentRole === 'incharge' || currentRole === 'head_biomedical') {
@@ -8746,7 +8998,9 @@ return;
                         equipCategory: category
                     };
                     await addInventoryItemToCloud(newRef, owner);
-if (_catChosen === 'biomedical' && _bioItems.length > 0) await saveBioChecklist(type, _bioItems);
+if (_catChosen === 'biomedical' && (_isBioDept || _isBioUser) && _bioItems.length > 0) {
+    await saveBioChecklist(type, _bioItems);
+}
                     await rememberLocation(dept, loc);
                     if (currentRole === 'technician') {
                         REF_INVENTORY.push(newRef);
@@ -8835,31 +9089,20 @@ document.getElementById('editRefTag').readOnly = !(currentRole === 'supervisor' 
                 document.getElementById('editRefEquipName').value = ref.equipName || '';
                 document.getElementById('editRefBrand').value = ref.brand || '';
                 document.getElementById('editRefModel').value = ref.model || '';
-                // 🔒 Filter categories based on user's department
-                let isBio = false;
-                if (currentRole === 'head_biomedical') isBio = true;
-                else if (currentRole === 'technician') {
-                    const u = LIVE_USERS[currentLoggedInName];
-                    if (u) {
-                        const depts = Array.isArray(u.depts) ? u.depts : (u.dept ? [u.dept] : []);
-                        isBio = depts.some(d => normalizeText(d) === normalizeText('Biomedical'));
-                    }
-                } else if (currentRole === 'incharge' && currentInchargeDept) {
-                    isBio = normalizeText(currentInchargeDept) === normalizeText('Biomedical');
+                // 🏢 Category options follow the EQUIPMENT'S department, not the user's.
+                const _editDeptEl = document.getElementById('editRefDept');
+                if (_editDeptEl && !_editDeptEl.dataset.filterListenerAdded) {
+                    _editDeptEl.dataset.filterListenerAdded = '1';
+                    _editDeptEl.addEventListener('change', () => applyCategoryFilterByDept('editRef'));
                 }
-
-                const catSel = document.getElementById('editRefCategory');
-                Array.from(catSel.options).forEach(opt => {
-                    if (isBio) {
-                        opt.style.display = (opt.value === 'biomedical' || opt.value === 'equipment') ? 'block' : 'none';
-                    } else {
-                        opt.style.display = (opt.value === 'fridge' || opt.value === 'ac' || opt.value === 'electrical' || opt.value === 'equipment') ? 'block' : 'none';
-                        if (currentRole === 'supervisor' || currentRole === 'assetsmanager') opt.style.display = 'block';
-                    }
-                });
+                await applyCategoryFilterByDept('editRef');
 
                 const _cat = ref.equipCategory || getCategoryForType(ref.type);
-                if (catSel) catSel.value = _cat;
+                // ✅ FIX: 'catSel' was undefined here, causing the modal to crash and not open.
+                // We must fetch the element directly.
+                const _editCatEl = document.getElementById('editRefCategory');
+                if (_editCatEl) _editCatEl.value = _cat;
+                
                 await populateTypeSelect(document.getElementById('editRefType'), _cat);
 
                 const _editSel    = document.getElementById('editRefType');
@@ -8918,8 +9161,13 @@ document.getElementById('editRefTag').readOnly = !(currentRole === 'supervisor' 
                 const editTypeVal = getSelectedRefType('editRef');
                 if (!editTypeVal) { alert('Please enter the Equipment Type.'); return; }
 
+                let editTag = document.getElementById('editRefTag').value.trim();
+                if (!editTag) {
+                    editTag = 'AUTO-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+                }
+
                 const updated = {
-                    tag: document.getElementById('editRefTag').value.trim(),
+                    tag: editTag,
                     dept: document.getElementById('editRefDept').value,
                     loc: (document.getElementById('editRefLocation').value || '').trim(),
                     equipName: (document.getElementById('editRefEquipName').value || '').trim(),
@@ -10852,16 +11100,16 @@ Object.keys(DEPARTMENTS).forEach(d => {
                 Object.keys(users).forEach(n => {
                     const u = users[n];
                     if (userRecHasPermission(u, 'incharge') || userRecHasPermission(u, 'head_biomedical')) {
-                        ic[n] = {
-                            pin: u.pin || '',
-                            dept: u.dept || '',
-                            role: u.role,
-                            permissions: u.permissions || null,
-                            totpEnabled: u.totpEnabled,
-                            pinChangedAt: u.pinChangedAt || '',
-                            pinChangedBy: u.pinChangedBy || ''
-                        };
-                    }
+                ic[n] = {
+                    role: u.role,
+                    pin: u.pin || '',
+                    dept: u.dept || '',
+                    permissions: u.permissions || null,
+                    totpEnabled: u.totpEnabled,
+                    pinChangedAt: u.pinChangedAt || '',
+                    pinChangedBy: u.pinChangedBy || ''
+                };
+            }
                 });
                 wrap.innerHTML = '';
                 const names = Object.keys(ic).sort();
@@ -11023,15 +11271,19 @@ Object.keys(DEPARTMENTS).forEach(d => {
                     const u = users[n];
                     if (userRecHasPermission(u, 'technician') || userRecHasPermission(u, 'supervisor') ||
                         userRecHasPermission(u, 'assetsmanager') || userRecHasPermission(u, 'infra_manager')) {
-                        techs[n] = {
-                            role: u.role,
-                            pin: u.pin || '',
-                            phone: u.phone || '',
-                            email: u.email || '',
-                            permissions: u.permissions || null,
-                            pinChangedAt: u.pinChangedAt || '',
-                            pinChangedBy: u.pinChangedBy || ''
-                        };
+                        // AFTER
+techs[n] = {
+    role: u.role,
+    pin: u.pin || '',
+    phone: u.phone || '',
+    email: u.email || '',
+    // ✅ NEW: read the current department (dept is canonical, depts is the array)
+    dept: u.dept || (Array.isArray(u.depts) && u.depts.length > 0 ? u.depts[0] : ''),
+    depts: Array.isArray(u.depts) ? u.depts : (u.dept ? [u.dept] : []),
+    permissions: u.permissions || null,
+    pinChangedAt: u.pinChangedAt || '',
+    pinChangedBy: u.pinChangedBy || ''
+};
                     }
                 });
                 wrap.innerHTML = '';
@@ -11054,6 +11306,14 @@ Object.keys(DEPARTMENTS).forEach(d => {
                     row.innerHTML = `<div>
             <label style="font-size:.75rem;color:#5b7b96;font-weight:700;">FULL NAME${roleTag}</label>
             <input type="text" class="tech-name-input" value="${escapeHtml(name)}" style="width:100%;font-weight:700;">
+
+            <label style="font-size:.75rem;color:#5b7b96;font-weight:700;margin-top:8px;display:block;">🏢 DEPARTMENT</label>
+            <select class="tech-dept-input" style="width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid #cfdfeb;background:#fbfdff;font-family:inherit;font-size:.9rem;font-weight:700;color:#12405e;">
+                <option value="" ${!r.dept ? 'selected' : ''}>— No department —</option>
+                <option value="Infrastructure" ${r.dept === 'Infrastructure' ? 'selected' : ''}>🏗️ Infrastructure</option>
+                <option value="Biomedical"     ${r.dept === 'Biomedical'     ? 'selected' : ''}>🏥 Biomedical (BMET)</option>
+            </select>
+
             <label style="font-size:.75rem;color:#5b7b96;font-weight:700;margin-top:8px;display:block;">PIN</label>
             <input type="text" inputmode="numeric" class="tech-pin-input" value="${escapeHtml(r.pin)}" style="width:100%;">
             ${_pinChanged}
@@ -11158,6 +11418,7 @@ Object.keys(DEPARTMENTS).forEach(d => {
                     const pin = (row.querySelector('.tech-pin-input').value || '').trim();
                     const phone = (row.querySelector('.tech-phone-input').value || '').trim();
                     const email = (row.querySelector('.tech-email-input').value || '').trim();
+                    const dept = (row.querySelector('.tech-dept-input')?.value || '').trim();
                     const perms = {};
                     row.querySelectorAll('.tech-perm-input').forEach(cb => {
                         perms[cb.getAttribute('data-perm')] = cb.checked;
@@ -11166,7 +11427,11 @@ Object.keys(DEPARTMENTS).forEach(d => {
                     if (!name) return;
                     if (pin && !/^\d{4,8}$/.test(pin)) { err = 'PIN invalid for ' + name; return; }
                     if (email && !/^\S+@\S+\.\S+$/.test(email)) { err = 'Email invalid for ' + name; return; }
-                    upd.push({ name, pin, phone, email, permissions: perms });
+                    if (perms.technician && !dept) {
+                        err = name + ' has the "Technician" permission but no department. Please pick Infrastructure or Biomedical.';
+                        return;
+                    }
+                    upd.push({ name, pin, phone, email, dept, permissions: perms });
                 });
                 if (err) { alert(err); return; }
                 this.disabled = true;
@@ -11182,6 +11447,8 @@ Object.keys(DEPARTMENTS).forEach(d => {
                             pin: u.pin,
                             phone: u.phone,
                             email: u.email,
+                            dept: u.dept,
+                            depts: u.dept ? [u.dept] : [],
                             permissions: u.permissions,
                             role: computePrimaryRoleFromPerms(u.permissions),
                             updatedAt: window.FB.serverTimestamp()
@@ -11201,6 +11468,8 @@ Object.keys(DEPARTMENTS).forEach(d => {
                             { merge: true }
                         );
                     }
+                    USERS_CACHE = null;
+                    LIVE_USERS = await loadUsersFromFirestore();
                     showStatus('✅ Saved.', true);
                 } catch (e) { showStatus('⚠️ ' + e.message, false); }
                 await renderTechnicianEditor();
@@ -11827,7 +12096,7 @@ if (n.type === 'pm_submitted') {
         
         const q = window.FB.query(
             window.FB.collection(window.FB.db, 'curativeRequests'),
-            window.FB.limit(200)
+            window.FB.limit(100)
         );
         const snap = await window.FB.getDocs(q);
         const out = [];
@@ -11879,7 +12148,10 @@ if (n.type === 'pm_submitted') {
         if (opts.assignedTo && opts.assignedTo !== 'all') filtered = filtered.filter(c => normalizeText(c.assignedTo) === normalizeText(opts.assignedTo));
         if (opts.quarterKey && opts.quarterKey !== 'all') filtered = filtered.filter(c => c.quarterKey === opts.quarterKey);
         return filtered;
-    } catch (e) { return []; }
+    } catch (e) { 
+        console.error('❌ Error fetching curative requests:', e);
+        return []; 
+    }
 }
             async function createCurativeRequest(p) {
                 const ref = await window.FB.addDoc(window.FB.collection(window.FB.db, 'curativeRequests'), {
@@ -12441,7 +12713,7 @@ if (n.type === 'pm_submitted') {
             ${jcRow('Assigned to', escapeHtml(c.assignedTo || '—'))}
             ${c.completedAt ? jcRow('Completed', formatDateOnly(c.completedAt)) : ''}
             ${c.technicianNotes ? jcRow('Notes', escapeHtml(c.technicianNotes)) : '<div style="color:#9cb9d0;font-style:italic;">Not completed yet.</div>'}
-            ${c.technicianPhoto ? `<div style="margin-top:10px;"><img src="${c.technicianPhoto}" style="max-width:100%;border-radius:12px;border:2px solid #e2eaf1;"></div>` : ''}
+            ${c.technicianPhoto ? (safeImageUrl(c.technicianPhoto) ? `<div style="margin-top:10px;"><img src="${safeImageUrl(c.technicianPhoto)}" style="max-width:100%;border-radius:12px;border:2px solid #e2eaf1;"></div>` : '') : ''}
         </div>
         ${c.verifiedAt || c.feedback ? `<div class="info-card"><h2>👔 Verification</h2>
             ${jcRow('Verified by', escapeHtml(c.verifiedBy || '—'))}
@@ -12708,7 +12980,7 @@ if (n.type === 'pm_submitted') {
             <div style="font-weight:700;color:#1b6b3f;font-size:.82rem;margin-bottom:4px;">🔧 Tech notes</div>
             <div style="font-size:.88rem;color:#155231;">${escapeHtml(c.technicianNotes || '—')}</div>
         </div>
-        ${c.technicianPhoto ? `<div style="margin-top:10px;"><img src="${c.technicianPhoto}" style="max-width:100%;border-radius:12px;border:2px solid #e2eaf1;"></div>` : ''}`;
+        ${c.technicianPhoto ? (safeImageUrl(c.technicianPhoto) ? `<div style="margin-top:10px;"><img src="${safeImageUrl(c.technicianPhoto)}" style="max-width:100%;border-radius:12px;border:2px solid #e2eaf1;"></div>` : '') : ''}`;
                 const good = document.querySelector('#curativeQualityGroup input[value="good"]');
                 if (good) good.checked = true;
                 document.querySelectorAll('#curativeQualityGroup label').forEach(l => l.classList.remove('selected'));
@@ -14473,15 +14745,17 @@ const dim = sigDims[_techKey];
                 if (includeZeroPm) {
                     deptInv.forEach(a => {
                         const tag = safeStr(a.tag);
+                        const dept = safeStr(a.dept) || '—';
                         const loc = safeStr(a.loc) || '—';
                         const name = safeStr(a.equipName) || '(unnamed)';
                         const key = tag + '||' + loc;
-                        byRefMap[key] = { tag, loc, name, count: 0 };
+                        byRefMap[key] = { tag, dept, loc, name, count: 0 };
                     });
                 }
 
                 records.forEach(r => {
                     const tag = safeStr(r['Ref Tag'] || r.refTag) || '(unknown)';
+                    const dept = safeStr(r['Department'] || r.refDept) || '—';
                     const loc = safeStr(r['Location'] || r.refLocation) || '—';
                     
                     let name = safeStr(r['Equipment Name'] || r.refEquipName);
@@ -14491,7 +14765,7 @@ const dim = sigDims[_techKey];
                     name = name || '(unnamed)';
 
                     const key = tag + '||' + loc;
-                    if (!byRefMap[key]) byRefMap[key] = { tag, loc, name, count: 0 };
+                    if (!byRefMap[key]) byRefMap[key] = { tag, dept, loc, name, count: 0 };
                     byRefMap[key].count++;
                 });
 
@@ -14501,7 +14775,7 @@ const dim = sigDims[_techKey];
                     return byRefMap[a].tag.localeCompare(byRefMap[b].tag);
                 }).map(k => {
                     const item = byRefMap[k];
-                    return [item.name, item.tag, item.loc, item.count];
+                    return [item.name, item.tag, item.dept, item.loc, item.count];
                 });
 
                 // ✅ 6. Draw the table with Name, Tag, Location, and PMs columns
@@ -14512,8 +14786,9 @@ const dim = sigDims[_techKey];
                     doc.setFont('helvetica', 'bold');
                     doc.setTextColor(18, 64, 94);
                     doc.text('Equipment Name', mL + 2, y + 4);
-                    doc.text('Tag Number', mL + 55, y + 4);
-                    doc.text('Location', mL + 100, y + 4);
+                    doc.text('Tag Number', mL + 50, y + 4);
+                    doc.text('Department', mL + 85, y + 4);
+                    doc.text('Location', mL + 120, y + 4);
                     doc.text('PMs', mL + cW - 15, y + 4);
                     y += 6;
                     
@@ -14528,10 +14803,11 @@ const dim = sigDims[_techKey];
                             doc.setFillColor(249, 252, 255);
                             doc.rect(mL, y, cW, 6, 'F');
                         }
-                        doc.text(String(r[0]).substring(0, 30), mL + 2, y + 4);      // Equipment Name
-                        doc.text(String(r[1]).substring(0, 22), mL + 55, y + 4);     // Tag Number
-                        doc.text(String(r[2]).substring(0, 28), mL + 100, y + 4);    // Location
-                        doc.text(String(r[3]), mL + cW - 15, y + 4);                 // PMs count
+                        doc.text(String(r[0]).substring(0, 25), mL + 2, y + 4);      // Equipment Name
+                        doc.text(String(r[1]).substring(0, 18), mL + 50, y + 4);     // Tag Number
+                        doc.text(String(r[2]).substring(0, 20), mL + 85, y + 4);     // Department
+                        doc.text(String(r[3]).substring(0, 22), mL + 120, y + 4);    // Location
+                        doc.text(String(r[4]), mL + cW - 15, y + 4);                 // PMs count
                         y += 6;
                     });
                 }
@@ -14718,11 +14994,15 @@ const itemsToCheck = isAC ? AC_ITEMS : FRIDGE_ITEMS;
                 if (techSig) techSig = await ensurePngDataUrl(techSig);
                 const techDims = techSig ? await loadImageDimensions(techSig) : null;
 
-                const totalPages = doc.internal.getNumberOfPages();
-                doc.setPage(totalPages);
-                
-                // Draw the visual signature box
-                const sigBoxY = pH - 55; 
+                // ✅ DYNAMIC SIGNATURE POSITIONING
+                // Check if we need a new page to avoid overlapping the anomalies table
+                if (y + 55 > pH - 22) {
+                    doc.addPage();
+                    y = drawChubSlimHeader(doc, { title: 'EQUIPMENT ANALYSIS (cont.)', ref: 'CHUB/FRG/ANA' });
+                }
+
+                // Draw the visual signature box right below the last content
+                const sigBoxY = y + 8; 
                 const sigBoxW = 80;
                 const sigBoxH = 35;
 
@@ -14773,6 +15053,8 @@ const itemsToCheck = isAC ? AC_ITEMS : FRIDGE_ITEMS;
                 // If a cert is loaded in memory, it belongs to the current user
                 const safeToSign = isCertLoaded();
                     
+                // ✅ DYNAMIC CRYPTOGRAPHIC STAMP POSITIONING
+                // The placement uses the dynamically calculated sigBoxY
                 const signedBytes = safeToSign
                     ? await signPdfBytes(bytes, {
                         placements: [{
@@ -15586,16 +15868,15 @@ if (!afO) {
             if (n === BIOMEDICAL_MANAGER_NAME) return true;  // KAMANAYO Emmanuel (Head Biomedical)
             if (n === SUPERVISOR_NAME)         return true;  // GATANGANWA Raissa (Infra In-Charge)
 
-            // ✅ 2. Include any TECHNICIAN whose department is Infrastructure or Biomedical
+                       // ✅ 2. Include ANYONE (Technician, In-Charge, Manager) whose department is strictly Infrastructure or Biomedical
             const ds = Array.isArray(u.depts) && u.depts.length > 0
                 ? u.depts
                 : (u.dept ? [u.dept] : []);
             const inInfra = ds.some(d => normalizeText(d) === normalizeText(INFRA_DEPT_NAME));
             const inBio   = ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
 
-            if (u.role === 'technician' && (inInfra || inBio)) return true;
+            if (inInfra || inBio) return true;
 
-            // ❌ Everyone else (other In-Charges, Assets Manager, other roles) excluded
             return false;
         }).sort();
     }
@@ -15724,7 +16005,127 @@ if (!afO) {
                     wrap.innerHTML = '<div class="info-error">⚠️ ' + escapeHtml(e.message) + '</div>';
                 }
             }
+            // ===== BULK SCHEDULE IMPORT LOGIC =====
+            document.getElementById('ttBulkImportBtn')?.addEventListener('click', () => {
+                document.getElementById('bulkScheduleData').value = '';
+                document.getElementById('bulkScheduleError').textContent = '';
+                // Default to the 1st of the current month
+                const today = new Date();
+                document.getElementById('bulkScheduleMonth').value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-01';
+                document.getElementById('bulkScheduleModal').classList.add('show');
+            });
 
+            document.getElementById('bulkScheduleCancel')?.addEventListener('click', () => {
+                document.getElementById('bulkScheduleModal').classList.remove('show');
+            });
+
+            document.getElementById('bulkScheduleSaveBtn')?.addEventListener('click', async function () {
+                const rawData = document.getElementById('bulkScheduleData').value.trim();
+                const startMonth = document.getElementById('bulkScheduleMonth').value;
+                const errEl = document.getElementById('bulkScheduleError');
+                
+                if (!rawData) { errEl.textContent = '⚠️ Please paste the Excel data.'; return; }
+                if (!startMonth) { errEl.textContent = '⚠️ Select the month.'; return; }
+
+                const btn = this;
+                const orig = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Processing...';
+                errEl.textContent = '';
+
+                try {
+                    const users = await loadUsersFromFirestore();
+                    const lines = rawData.split('\n');
+                    let updatedCount = 0;
+
+                    // Map the PDF/Excel codes to system shifts
+                    const shiftMap = {
+                        'A': 'day', 'P': 'day', 'GW': 'day',
+                        'GN': 'night',
+                        'R': 'off', 'C': 'off', 'CA': 'off', 'RM': 'off', 'ML': 'off', 'T': 'off', 'M': 'off', 'GC': 'off'
+                    };
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        
+                        // Split by Tab (Excel) or Comma (CSV)
+                        const cols = line.split(/\t|,/).map(s => s.trim());
+                        if (cols.length < 2) continue;
+
+                        const rawName = cols[0];
+                        // Fuzzy match the name to the database (e.g., "J DE DIEU" -> "NSHIMIYIMANA Jean de Dieu")
+                        const matchedName = Object.keys(users).find(u => 
+                            normalizeText(u).includes(normalizeText(rawName)) || 
+                            normalizeText(rawName).includes(normalizeText(u)) ||
+                            normalizeText(u).split(' ').some(part => part === normalizeText(rawName))
+                        );
+
+                        if (!matchedName) {
+                            console.warn('Name not found in system:', rawName);
+                            continue; 
+                        }
+
+                        const exceptions = [];
+                        const baseDate = new Date(startMonth + 'T00:00:00');
+
+                        // Process days 1 to 30/31
+                        for (let i = 1; i < cols.length; i++) {
+                            const rawCode = cols[i].toUpperCase().replace(/[^A-Z]/g, ''); // e.g. "*A" becomes "A"
+                            if (!rawCode) continue;
+
+                            const shiftType = shiftMap[rawCode] || 'off'; // Default to off if unknown
+                            
+                            // Calculate the date
+                            const currentDate = new Date(baseDate);
+                            currentDate.setDate(baseDate.getDate() + (i - 1));
+                            const dateStr = currentDate.toISOString().split('T')[0];
+
+                            exceptions.push({
+                                date: dateStr,
+                                shift: shiftType,
+                                reason: `Bulk Import: ${rawCode}`
+                            });
+                        }
+
+                        // Save to Database
+                        const existing = await fetchScheduleFor(matchedName);
+                        const sched = existing || { 
+                            technician: matchedName, dept: INFRA_DEPT_NAME, 
+                            weeklyPattern: {}, exceptions: [], leaves: [] 
+                        };
+
+                        // Merge new exceptions with existing ones (overwrite if same date)
+                        const excMap = new Map();
+                        (sched.exceptions || []).forEach(e => excMap.set(e.date, e));
+                        exceptions.forEach(e => excMap.set(e.date, e));
+                        sched.exceptions = Array.from(excMap.values()).sort((a,b) => a.date.localeCompare(b.date));
+
+                        await saveScheduleFor(matchedName, INFRA_DEPT_NAME, sched);
+                        updatedCount++;
+                    }
+
+                    if (updatedCount === 0) {
+                        throw new Error('No matching names were found. Check your spelling.');
+                    }
+
+                    errEl.style.color = '#1b6b3f';
+                    errEl.textContent = `✅ Successfully imported schedules for ${updatedCount} staff members.`;
+                    
+                    // Refresh the UI lists
+                    await renderTimetableTechList();
+                    if (typeof renderSupTeamAvailability === 'function') await renderSupTeamAvailability();
+                    
+                    setTimeout(() => {
+                        document.getElementById('bulkScheduleModal').classList.remove('show');
+                    }, 1500);
+
+                } catch (e) {
+                    errEl.style.color = '#b33a3a';
+                    errEl.textContent = '⚠️ ' + e.message;
+                }
+                btn.disabled = false;
+                btn.innerHTML = orig;
+            });
             async function openManageScheduleModal(tech) {
                 if (!tech) return;
                 CURRENT_SCHEDULE_TECH = tech;
@@ -15880,8 +16281,9 @@ if (!afO) {
             }
             function openPdfViewer(pdf) {
                 if (!pdf || !pdf.base64) return;
-                let src = pdf.base64;
-                if (!src.startsWith('data:')) src = 'data:application/pdf;base64,' + src;
+                // Force the MIME type — never trust whatever is stored.
+                const _rawB64 = String(pdf.base64).replace(/^data:[^,]*,/, '');
+                const src = 'data:application/pdf;base64,' + _rawB64;
                 const w = window.open('', '_blank');
                 if (w) {
                                 w.document.write(`
@@ -16020,21 +16422,26 @@ if (!afO) {
             let team = Object.keys(users).filter(n => users[n].role === 'technician').sort();
 
             // 🔒 STRICT DEPARTMENT SEPARATION
-                        // 🏗️ Infra Manager sees ALL technicians EXCEPT the Manager (Raissa)
             if (currentRole === 'infra_manager') {
-                team = team.filter(n => normalizeText(n) !== normalizeText(SUPERVISOR_NAME));
-            }
-
-            if (currentRole === 'head_biomedical') {
+                // 🏗️ Infra Manager sees ONLY Infrastructure & Biomedical staff (except Raissa)
+                team = team.filter(n => {
+                    if (normalizeText(n) === normalizeText(SUPERVISOR_NAME)) return false;
+                    const u = users[n];
+                    const ds = Array.isArray(u.depts) && u.depts.length > 0 ? u.depts : (u.dept ? [u.dept] : []);
+                    const inInfra = ds.some(d => normalizeText(d) === normalizeText(INFRA_DEPT_NAME));
+                    const inBio   = ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
+                    return inInfra || inBio;
+                });
+            } else if (currentRole === 'head_biomedical') {
                 team = team.filter(n => {
                     const u = users[n];
-                    const ds = Array.isArray(u.depts) ? u.depts : (u.dept ? [u.dept] : []);
+                    const ds = Array.isArray(u.depts) && u.depts.length > 0 ? u.depts : (u.dept ? [u.dept] : []);
                     return ds.some(d => normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME));
                 });
             } else if (currentRole === 'supervisor') {
                 team = team.filter(n => {
                     const u = users[n];
-                    const ds = Array.isArray(u.depts) ? u.depts : (u.dept ? [u.dept] : []);
+                    const ds = Array.isArray(u.depts) && u.depts.length > 0 ? u.depts : (u.dept ? [u.dept] : []);
                     return ds.some(d => normalizeText(d) === normalizeText(INFRA_DEPT_NAME));
                 });
             }
@@ -16094,7 +16501,7 @@ if (!afO) {
                     
                     const q = window.FB.query(
                         window.FB.collection(window.FB.db, 'tasks'),
-                        window.FB.limit(300)
+                        window.FB.limit(100) // ✅ OPTIMIZED: Reduced to 100
                     );
                     const snap = await window.FB.getDocs(q);
                     const out = [];
@@ -16384,12 +16791,21 @@ if (!afO) {
 
                 const users = await loadUsersFromFirestore();
                 const techs = Object.keys(users).filter(n => users[n].role === 'technician').sort();
-                // 🔒 Infra Manager may only assign to GATANGANWA Raissa from the In-Charge group.
+                
+                // ✅ FIXED: Allow assigning to ALL In-Charges & Managers in Infrastructure and Biomedical
                 const incharges = Object.keys(users)
-                    .filter(n =>
-                        (users[n].role === 'incharge' || users[n].role === 'supervisor') &&
-                        normalizeText(n) === normalizeText(SUPERVISOR_NAME)
-                    )
+                    .filter(n => {
+                        const u = users[n];
+                        // Must have incharge or supervisor permissions
+                        if (!userRecHasPermission(u, 'incharge') && !userRecHasPermission(u, 'supervisor')) return false;
+                        
+                        // Check if they belong to Infrastructure or Biomedical
+                        const ds = Array.isArray(u.depts) && u.depts.length > 0 ? u.depts : (u.dept ? [u.dept] : []);
+                        return ds.some(d => 
+                            normalizeText(d) === normalizeText(INFRA_DEPT_NAME) || 
+                            normalizeText(d) === normalizeText(BIOMEDICAL_DEPT_NAME)
+                        );
+                    })
                     .sort();
 
                 if (techs.length) {
@@ -16404,7 +16820,7 @@ if (!afO) {
                 }
                 if (incharges.length) {
                     const g2 = document.createElement('optgroup');
-                    g2.label = '👔 In-Charge (GATANGANWA Raissa only)';
+                    g2.label = '👔 In-Charges & Managers';
                     incharges.forEach(n => {
                         const o = document.createElement('option'); o.value = n;
                         o.textContent = n; o.dataset.role = 'incharge';
@@ -17328,13 +17744,15 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
             let pendingVisualSig = null, pendingInchargeSig = null, pendingCert = null;
 
             function renderVisualPreview() {
-                sigPreview.innerHTML = pendingVisualSig
-                    ? `<img src="${pendingVisualSig}">`
+                const _s = safeImageUrl(pendingVisualSig);
+                sigPreview.innerHTML = _s
+                    ? `<img src="${_s}">`
                     : '<span class="placeholder">No visual signature</span>';
             }
             function renderInchargeSigPreview() {
-                inchargeSigPreview.innerHTML = pendingInchargeSig
-                    ? `<img src="${pendingInchargeSig}">` // <-- Make sure the $ is here!
+                const _s = safeImageUrl(pendingInchargeSig);
+                inchargeSigPreview.innerHTML = _s
+                    ? `<img src="${_s}">`
                     : '<span class="placeholder">No in-charge signature</span>';
             }
             function renderCertPreview() {
@@ -17508,14 +17926,25 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                 updateTechnicianDisplay();
                 pfxPasswordInput.value = '';
                 signatureModal.classList.remove('show');
-                if (window.__cachedPfxBinary && window.__cachedPfxPassword) {
-                    try {
-                        sessionStorage.setItem('chub_pfx_bin_' + currentLoggedInName, window.__cachedPfxBinary);
-                        sessionStorage.setItem('chub_pfx_pw_' + currentLoggedInName, window.__cachedPfxPassword);
-                        console.log('[sigSave] PFX cached in sessionStorage for', currentLoggedInName);
-                    } catch (e) { console.warn('[sigSave] sessionStorage cache failed:', e); }
+                
+                // --- NEW ERROR CHECKING ---
+                let saveSuccess = true;
+                if (pendingVisualSig) {
+                    const ok1 = await pushTechnicianSignatureToCloud(currentLoggedInName, pendingVisualSig);
+                    if (!ok1) saveSuccess = false;
                 }
-                showStatus('Signature saved.', true);
+                if ((currentRole === 'incharge' || currentRole === 'supervisor' || currentRole === 'head_biomedical') && pendingInchargeSig) {
+                    const ok2 = await pushInchargeSignatureToCloud(currentLoggedInName, pendingInchargeSig);
+                    if (!ok2) saveSuccess = false;
+                }
+
+                if (saveSuccess) {
+                    showStatus('✅ Signature saved to cloud.', true);
+                } else {
+                    // This will pop up an alert if Supabase blocks the save!
+                    alert('⚠️ FAILED TO SAVE TO CLOUD. You likely need to check your Supabase RLS policies for the "config" table, or your image is too large.');
+                    showStatus('⚠️ Failed to save signature.', false);
+                }
                 await populateInchargeSuggestions();
             });
 
@@ -17621,7 +18050,15 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                     techs = Object.keys(users)
                         .filter(n => userRecHasPermission(users[n], 'assetsmanager'))
                         .sort();
+                } else if (loginRole === 'supervisor') {
+                    // 👑 ADMIN/MANAGER LOGIN → Hide dept picker, ONLY show the manager
+                    if (deptSel) deptSel.style.display = 'none';
+                    techs = Object.keys(users)
+                        .filter(n => n === SUPERVISOR_NAME || userRecHasPermission(users[n], 'supervisor'))
+                        .sort();
                 } else {
+                    // Normal Technician login → show department picker
+                    if (deptSel) deptSel.style.display = 'block';
                     // Technician login → show department picker
                     if (deptSel) deptSel.style.display = 'block';
                     
@@ -17736,37 +18173,9 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                     window.__cachedPfxBinary = null;
                     window.__cachedPfxPassword = null;
                     clearCert();
-                    try {
-                        const _cb = sessionStorage.getItem('chub_pfx_bin_' + p.name);
-                        const _cp = sessionStorage.getItem('chub_pfx_pw_' + p.name);
-                        if (_cb && _cp && typeof forge !== 'undefined') {
-                            const _p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(_cb), _cp);
-                            const _cB = _p12.getBags({ bagType: forge.pki.oids.certBag });
-                            const _c = _cB[forge.pki.oids.certBag] && _cB[forge.pki.oids.certBag][0];
-                            const _kB = _p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-                            let _kb = _kB[forge.pki.oids.pkcs8ShroudedKeyBag] && _kB[forge.pki.oids.pkcs8ShroudedKeyBag][0];
-                            if (!_kb) {
-                                const _pb = _p12.getBags({ bagType: forge.pki.oids.keyBag });
-                                _kb = _pb[forge.pki.oids.keyBag] && _pb[forge.pki.oids.keyBag][0];
-                            }
-                            if (_c && _c.cert && _kb && _kb.key) {
-                                CERT_STATE.certificate = _c.cert;
-                                CERT_STATE.privateKey = _kb.key;
-                                const _gf = (o, n) => { try { const f = o.getField(n); return f ? f.value : ''; } catch (e) { return ''; } };
-                                CERT_STATE.subject = pdfSanitize(_gf(_c.cert.subject, 'CN') || '(unknown)');
-                                CERT_STATE.issuer = pdfSanitize(_gf(_c.cert.issuer, 'CN') || '(unknown)');
-                                CERT_STATE.serial = _c.cert.serialNumber || '';
-                                CERT_STATE.validFrom = _c.cert.validity.notBefore;
-                                CERT_STATE.validTo = _c.cert.validity.notAfter;
-                                const _der = forge.asn1.toDer(forge.pki.certificateToAsn1(_c.cert)).getBytes();
-                                const _md = forge.md.sha256.create(); _md.update(_der);
-                                CERT_STATE.fingerprint = _md.digest().toHex().match(/.{1,2}/g).join(':').toUpperCase();
-                                window.__cachedPfxBinary = _cb;
-                                window.__cachedPfxPassword = _cp;
-                                console.log('[unlockApp] PFX restored silently from sessionStorage');
-                            }
-                        }
-                    } catch (e) { console.warn('[unlockApp] sessionStorage PFX restore failed:', e); }
+                    // 🔒 SECURITY: PFX binary/password are no longer restored from
+                    // sessionStorage. The user will be prompted for the PFX password
+                    // (askPfxPassword) the first time they sign a document in this session.
                     
                     if (p.name === SUPERVISOR_NAME) currentRole = 'supervisor';
                     else if (p.name === INFRA_MANAGER_NAME) currentRole = 'infra_manager';
@@ -17924,6 +18333,13 @@ document.getElementById('imPerfExportBtn')?.addEventListener('click', perfExport
                 }
             }
             function lockApp() {
+                // Clear any legacy PFX data sitting in sessionStorage
+                try {
+                    if (currentLoggedInName) {
+                        sessionStorage.removeItem('chub_pfx_bin_' + currentLoggedInName);
+                        sessionStorage.removeItem('chub_pfx_pw_' + currentLoggedInName);
+                    }
+                } catch (e) {}
                 clearCert();
                 window.__cachedPfxBinary = null;
                 window.__cachedPfxPassword = null;
@@ -17990,7 +18406,7 @@ if (_ugBtn) _ugBtn.style.display = 'none';
                         try { LIVE_USERS = await loadUsersFromFirestore(); } catch (e) { }
                     }
 
-                    if (role === 'technician' || role === 'assetsmanager') {
+                    if (role === 'technician' || role === 'assetsmanager' || role === 'supervisor') {
                         const n = loginTechSelect.value;
                         if (!n) { loginError.textContent = 'Select your name.'; return; }
                         const r = LIVE_USERS[n];
@@ -18292,6 +18708,30 @@ const t = _pd ? _pd.getTime() : NaN;
 
             document.getElementById('headerAvatar')?.addEventListener('click', openProfileModal);
             document.getElementById('profileBtn')?.addEventListener('click', openProfileModal);
+                        /* ===== SECRET ADMIN LOGIN REVEAL ===== */
+            let _adminTapCount = 0;
+            let _adminTapTimer = null;
+            // Click the Lock Icon (🔐) in the Login Modal 5 times to reveal Admin
+            const loginLockIcon = document.querySelector('#loginModal .modal-box > div:first-child');
+            if (loginLockIcon) {
+                loginLockIcon.addEventListener('click', function() {
+                    _adminTapCount++;
+                    clearTimeout(_adminTapTimer);
+                    
+                    if (_adminTapCount >= 5) {
+                        const adminOpt = document.getElementById('adminRoleOption');
+                        if (adminOpt) {
+                            adminOpt.style.display = 'block';
+                            this.textContent = '👑'; // Change icon to crown
+                            if (typeof toast === 'function') toast('Admin login unlocked', 'success');
+                        }
+                        _adminTapCount = 0;
+                    } else {
+                        // Reset after 2 seconds if they stop clicking
+                        _adminTapTimer = setTimeout(() => { _adminTapCount = 0; }, 2000);
+                    }
+                });
+            }
             async function openProfileModal() {
                 const modal = document.getElementById('profileModal');
                 PENDING_USER_PHOTO = null;
@@ -18756,32 +19196,7 @@ const t = _pd ? _pd.getTime() : NaN;
                     await ensureDepartmentsLoaded();
                 } catch (e) { console.warn(e); }
 
-                // 👔 Auto-migrate existing technicians (Eupax -> Biomedical, everyone else -> Infrastructure)
-                try {
-                    const users = await loadUsersFromFirestore();
-                    let changed = false;
-                    for (const name in users) {
-                        if (users[name].role === 'technician') {
-                            const isEupax = normalizeText(name).includes('EUPAX');
-                            const targetDept = isEupax ? BIOMEDICAL_DEPT_NAME : INFRA_DEPT_NAME;
-                            const currentDepts = users[name].depts || [];
-                            if (users[name].dept !== targetDept || currentDepts.length === 0 || currentDepts[0] !== targetDept) {
-                                console.log(`Migrating technician ${name} to ${targetDept}`);
-                                await window.FB.setDoc(
-                                    window.FB.doc(window.FB.db, 'users', userDocId(name)),
-                                    { dept: targetDept, depts: [targetDept], updatedAt: window.FB.serverTimestamp() },
-                                    { merge: true }
-                                );
-                                changed = true;
-                            }
-                        }
-                    }
-                    if (changed) {
-                        USERS_CACHE = null;
-                        await loadUsersFromFirestore();
-                    }
-                } catch (e) { console.warn('User migration failed:', e); }
-
+                
                 // 👔 Bootstrap KAMANAYO as Head of Biomedical
                 try {
                     const existing = await loadUsersFromFirestore();
@@ -19005,7 +19420,9 @@ const t = _pd ? _pd.getTime() : NaN;
                     const list = await fetchMyNotifications();
                     const newOnes = list.filter(n => !n.read && !__seenNotifIds.has(n._docId));
                     if (newOnes.length > 0) {
-    ['pmLogs', 'curative', 'tasks', 'equipment'].forEach(invalidateCache);
+    // ✅ OPTIMIZATION: Do NOT clear the entire app cache just because a notification arrived.
+    // Only the notifications list needs updating.
+    invalidateCache('notifications');
                         playNotificationSound();
                         if ('Notification' in window && Notification.permission === 'granted') {
                             const latest = newOnes[0];
