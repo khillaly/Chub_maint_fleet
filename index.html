@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+
         <!-- Supabase SDK -->
         <!-- ===== UPDATE NOTIFICATION SYSTEM (FREE) ===== -->
     <script>
@@ -160,7 +160,7 @@
      <!-- Supabase SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- jQuery (Required for Chart.js) -->
-     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+     
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script type="module">
@@ -3625,6 +3625,54 @@ window.setupPushNotifications = async function(userName) {
         }
         body.dark .perm-chip { background: #0f172a; color: #cbd5e1; border-color: #475569; }
         body.dark .perm-chip:has(input:checked) { background: #155231; color: #e2e8f0; }
+
+        /* ===== User Feedback / Message-to-Admin ===== */
+        .user-feedback-card {
+            background: #fff;
+            border-radius: 16px;
+            border: 1px solid #e2eaf1;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            border-left: 5px solid #7a4c9c;
+            transition: box-shadow .15s;
+        }
+        .user-feedback-card:hover { box-shadow: 0 4px 12px rgba(122,76,156,.12); }
+        .user-feedback-card.status-replied { border-left-color: #1b6b3f; background: #f0fdf4; }
+        .user-feedback-card.status-closed  { border-left-color: #9cb9d0; background: #f9fcff; }
+        .user-feedback-card .ufc-head {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            gap: 10px; margin-bottom: 6px; flex-wrap: wrap;
+        }
+        .user-feedback-card .ufc-subject { font-weight: 800; color: #12405e; font-size: .98rem; }
+        .user-feedback-card .ufc-meta    { font-size: .78rem; color: #5b7b96; margin-top: 3px; }
+        .user-feedback-card .ufc-body    {
+            font-size: .88rem; color: #1f3c54; background: #fbfdff;
+            border-left: 3px solid #cfdfeb; padding: 10px 12px;
+            border-radius: 8px; margin: 8px 0; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+        }
+        .user-feedback-card .ufc-reply   {
+            font-size: .88rem; color: #155231; background: #f0fdf4;
+            border-left: 3px solid #1b6b3f; padding: 10px 12px;
+            border-radius: 8px; margin: 8px 0; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+        }
+        .user-feedback-card .ufc-reply-head { font-size: .78rem; color: #1b6b3f; font-weight: 800; margin-bottom: 4px; }
+        .user-feedback-card .ufc-actions  {
+            display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+            padding-top: 10px; border-top: 1px dashed #e2eaf1;
+        }
+        .user-feedback-card textarea {
+            width: 100%; padding: 10px 14px; border-radius: 12px;
+            border: 1.5px solid #cfdfeb; font-family: inherit; font-size: .88rem;
+            resize: vertical; min-height: 56px; background: #fff;
+        }
+        .user-feedback-card textarea:focus {
+            outline: none; border-color: #7a4c9c;
+            box-shadow: 0 0 0 3px rgba(122,76,156,.1);
+        }
+        body.dark .user-feedback-card { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+        body.dark .user-feedback-card .ufc-subject { color:#cbd5e1; }
+        body.dark .user-feedback-card .ufc-body { background:#0f172a; color:#cbd5e1; border-color:#334155; }
+        body.dark .user-feedback-card textarea { background:#0f172a; color:#e2e8f0; border-color:#334155; }
     </style>
 </head>
 
@@ -3721,6 +3769,9 @@ window.setupPushNotifications = async function(userName) {
                 <button id="profileBtn" class="btn-secondary" style="padding:8px 18px;font-size:.85rem;">🖼️
                     Profile</button>
                 <button id="changePinBtn" class="btn-secondary" style="padding:8px 18px;font-size:.85rem;background:#e8f1fb;color:#0b3d91;border-color:#0b3d91;">🔑 Change PIN</button>
+                <button id="feedbackBtn" class="btn-secondary"
+    style="display:none;padding:8px 18px;font-size:.85rem;background:#f3e8ff;color:#5d3578;border-color:#7a4c9c;"
+    title="Send a message or suggestion to the System Manager">💬 Message Admin</button>
                                     <button id="twoFactorBtn" class="btn-secondary" style="padding:8px 18px;font-size:.85rem;background:#e8f1fb;color:#0b3d91;border-color:#0b3d91;">🔐 Security</button>
                 <button id="signatureBtn" class="btn-secondary" style="padding:8px 18px;font-size:.85rem;">🖊️ Signature
                     &amp; Cert</button>
@@ -4516,7 +4567,31 @@ window.setupPushNotifications = async function(userName) {
                 <div id="broadcastHistory" style="margin-top:16px;"></div>
             </div>
         </div>
-
+         <!-- ============ 📬 USER MESSAGES / FEEDBACK (System Manager only) ============ -->
+<div class="card collapsible-card collapsed" id="supervisorFeedbackCard"
+    style="margin-bottom:24px;border:2px solid #7a4c9c;">
+    <div class="card-header" style="background:#f3e8ff;color:#5d3578;">
+        <span>📬</span> User Messages &amp; Feedback
+        <span id="userFeedbackCount"
+            style="margin-left:auto;background:#7a4c9c;color:white;padding:3px 12px;border-radius:20px;font-size:.8rem;font-weight:700;">0</span>
+        <span class="collapse-caret">▼</span>
+    </div>
+    <div class="card-body">
+        <p style="font-size:.88rem;color:#5d3578;margin-bottom:14px;">
+            Messages sent by technicians, in-charges and the Assets Manager.
+            Reply to each one — the sender is notified instantly. Only the System Manager can see this card.
+        </p>
+        <div class="filter-selector" id="feedbackFilterBar" style="margin-bottom:12px;">
+            <div class="filter-chip active" data-status="open">📥 Unread / New</div>
+            <div class="filter-chip" data-status="replied">✅ Replied / Closed</div>
+            <div class="filter-chip" data-status="all">📋 All</div>
+        </div>
+        <button class="btn-secondary" id="feedbackRefreshBtn" style="padding:10px 20px;font-size:.85rem;margin-bottom:12px;">🔄 Refresh</button>
+        <div id="supervisorFeedbackList">
+            <div class="info-loading" style="text-align:center;padding:20px;color:#9cb9d0;">⏳ Loading…</div>
+        </div>
+    </div>
+</div>
         <div class="card" style="margin-bottom:24px;">
     <div class="card-header"><span>👥</span> Team Availability</div>
     <div class="card-body">
@@ -4759,7 +4834,6 @@ window.setupPushNotifications = async function(userName) {
                     </div>
                 </div>
             </div>
-
             <!-- ============ SUPERVISOR: FLEET OVERVIEW (FIXED — no longer contains escalated card) ============ -->
             <div class="card" style="margin-bottom:24px;border:2px solid #0b3d91;">
                 <div class="card-header" style="background:#e8f1fb;color:#0b3d91;">
@@ -6052,6 +6126,54 @@ window.setupPushNotifications = async function(userName) {
             </div>
         </div>
     </div>
+    <!-- ============ USER FEEDBACK / MESSAGE TO ADMIN MODAL ============ -->
+<div class="modal-overlay" id="userFeedbackModal">
+    <div class="modal-box" style="max-width:620px;">
+        <h2>💬 Message to System Admin</h2>
+        <p>Share feedback, request a new feature, or report an issue. The System Manager reads every message and can reply.</p>
+
+        <!-- Form view -->
+        <div id="userFeedbackForm">
+            <div class="field-group">
+                <label for="feedbackCategory">Category *</label>
+                <select id="feedbackCategory">
+                    <option value="general">💬 General feedback</option>
+                    <option value="feature">✨ Feature request</option>
+                    <option value="improvement">📈 Improvement suggestion</option>
+                    <option value="bug">🐛 Bug / issue</option>
+                    <option value="other">📝 Other</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <label for="feedbackSubject">Subject *</label>
+                <input type="text" id="feedbackSubject" maxlength="120" placeholder="Brief title of your message">
+            </div>
+            <div class="field-group">
+                <label for="feedbackMessage">Your message *</label>
+                <textarea id="feedbackMessage" class="remark-input" rows="5" maxlength="2000"
+                    placeholder="What would you like added, changed, or fixed? Be as detailed as you like…"></textarea>
+            </div>
+            <div id="feedbackError" style="color:#b33a3a;font-size:.85rem;min-height:18px;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap;">
+                <button class="btn-secondary" id="feedbackToggleListBtn" style="padding:10px 20px;font-size:.85rem;">📋 View My Messages</button>
+                <button class="btn-primary" id="feedbackSubmitBtn" style="padding:12px 24px;">📤 Send to Admin</button>
+            </div>
+        </div>
+
+        <!-- History view -->
+        <div id="userFeedbackList" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;">
+                <h3 style="font-size:1rem;color:#12405e;margin:0;">📋 My Messages</h3>
+                <button class="btn-secondary" id="feedbackBackBtn" style="padding:8px 16px;font-size:.82rem;">← Back to write</button>
+            </div>
+            <div id="feedbackHistory" style="max-height:420px;overflow-y:auto;"></div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn-cancel" id="feedbackCloseBtn">Close</button>
+        </div>
+    </div>
+</div>
     <!-- ============ BROADCAST ALERT MODAL ============ -->
     <div class="modal-overlay" id="broadcastModal">
         <div class="modal-box" style="max-width:520px;">
@@ -9545,6 +9667,14 @@ window.__ckOwner = '';
                 document.getElementById('infraManagerSection').style.display = isIM ? 'block' : 'none';
                 document.getElementById('technicianActionButtons').style.display = isTech ? 'flex' : 'none';
                 document.getElementById('workdateTag').style.display = isTech ? 'flex' : 'none';
+
+                // 📬 Message-to-Admin button — hidden only for the System Manager
+                const _fbBtn = document.getElementById('feedbackBtn');
+                if (_fbBtn) _fbBtn.style.display = isSup ? 'none' : 'inline-flex';
+
+                // Hide the User Messages card from anyone who isn't the System Manager
+                const _fbCard = document.getElementById('supervisorFeedbackCard');
+                if (_fbCard) _fbCard.style.display = isSup ? '' : 'none';
                 
                 if (isBio) {
                     currentInchargeDept = BIOMEDICAL_DEPT_NAME;
@@ -9613,6 +9743,7 @@ const icTaskCard = document.getElementById('icMyTasksCard');
                     const d = document.getElementById('supAvailDate');
                     if (d && !d.value) d.value = toIsoDate_(new Date());
                     setTimeout(() => renderSupTeamAvailability(), 800);
+                    setTimeout(() => refreshSupervisorFeedback(), 1300);
                 }
                        if (isBio) {
             populateSupervisorDeptFilter();
@@ -11936,10 +12067,10 @@ techs[n] = {
                 showStatus('🗑️ Cleared.', true);
             }
             function notifIcon(t) {
-                return ({ pm_cosigned: '✅', pm_rejected: '❌', curative_request: '🚨', curative_started: '🔧', curative_completed: '📸', curative_verified: '🎉', curative_rejected: '↩️', curative_escalated: '⚠️', curative_reassigned: '🔁', disposal_requested: '🗑️', disposal_incharge_approved: '👔', disposal_am_approved: '✅', disposal_rejected: '❌', task_assigned: '📋', task_started: '🔧', task_completed: '📸', task_verified: '🎉', task_rejected: '↩️', task_delegated: '🔁', task_escalated: '⚠️', task_delegated_info: 'ℹ️', pm_submitted: '📝', broadcast_info: '📢', broadcast_important: '⚠️', broadcast_urgent: '🚨' })[t] || '🔔';
+                return ({ pm_cosigned: '✅', pm_rejected: '❌', curative_request: '🚨', curative_started: '🔧', curative_completed: '📸', curative_verified: '🎉', curative_rejected: '↩️', curative_escalated: '⚠️', curative_reassigned: '🔁', disposal_requested: '🗑️', disposal_incharge_approved: '👔', disposal_am_approved: '✅', disposal_rejected: '❌', task_assigned: '📋', task_started: '🔧', task_completed: '📸', task_verified: '🎉', task_rejected: '↩️', task_delegated: '🔁', task_escalated: '⚠️', task_delegated_info: 'ℹ️', pm_submitted: '📝', broadcast_info: '📢', broadcast_important: '⚠️', broadcast_urgent: '🚨', user_feedback: '📬', user_feedback_reply: '✉️' })[t] || '🔔';
             }
             function notifColor(t) {
-                return ({ pm_cosigned: '#1b6b3f', pm_rejected: '#b33a3a', curative_request: '#b33a3a', curative_started: '#1e4a6d', curative_completed: '#0b3d91', curative_verified: '#1b6b3f', curative_rejected: '#b33a3a', curative_escalated: '#b33a3a', curative_reassigned: '#1e4a6d', disposal_requested: '#7a5300', disposal_incharge_approved: '#1b6b3f', disposal_am_approved: '#1b6b3f', disposal_rejected: '#b33a3a' })[t] || '#1e4a6d';
+                return ({ pm_cosigned: '#1b6b3f', pm_rejected: '#b33a3a', curative_request: '#b33a3a', curative_started: '#1e4a6d', curative_completed: '#0b3d91', curative_verified: '#1b6b3f', curative_rejected: '#b33a3a', curative_escalated: '#b33a3a', curative_reassigned: '#1e4a6d', disposal_requested: '#7a5300', disposal_incharge_approved: '#1b6b3f', disposal_am_approved: '#1b6b3f', disposal_rejected: '#b33a3a', user_feedback: '#7a4c9c', user_feedback_reply: '#1b6b3f' })[t] || '#1e4a6d';
             }
             function timeAgo(iso) {
                 if (!iso) return '';
@@ -12003,6 +12134,20 @@ techs[n] = {
                 closeNotifPanel();
 if (!n) return;
 ['pmLogs', 'curative', 'tasks'].forEach(invalidateCache);
+
+if (n.type === 'user_feedback') {
+    if (currentRole === 'supervisor') {
+        await refreshSupervisorFeedback();
+        scrollToId('supervisorFeedbackList');
+    }
+    return;
+}
+if (n.type === 'user_feedback_reply') {
+    document.getElementById('feedbackBtn')?.click();
+    setTimeout(() => document.getElementById('feedbackToggleListBtn')?.click(), 300);
+    return;
+}
+
 if (n.type === 'pm_submitted') {
     document.getElementById('pendingApprovalsCard')?.classList.remove('collapsed');
     refreshPendingApprovals(); scrollToId('pendingApprovalsList'); return;
@@ -19468,11 +19613,352 @@ document.getElementById('userGuideBtn')?.addEventListener('click', function () {
         alert('Please log in first to view the user guide.');
     }
 });
+
             document.addEventListener('click', function __onceUnlock() {
                 primeAudioContext();
                 document.removeEventListener('click', __onceUnlock);
             }, { once: true });
+/* ============================================================
+   📬 USER FEEDBACK / MESSAGE-TO-ADMIN SYSTEM
+   ============================================================ */
+const FEEDBACK_COLLECTION = 'userFeedback';
+let CURRENT_FEEDBACK_FILTER = 'open';
 
+const FEEDBACK_CATEGORY_ICONS = {
+    general: '💬', feature: '✨', improvement: '📈', bug: '🐛', other: '📝'
+};
+const FEEDBACK_STATUS_LABELS = {
+    open: '📥 New', replied: '✅ Replied', closed: '🔒 Closed'
+};
+
+/* ---------- User side: submit a message ---------- */
+async function submitUserFeedback() {
+    const category = document.getElementById('feedbackCategory').value || 'general';
+    const subject  = (document.getElementById('feedbackSubject').value || '').trim();
+    const message  = (document.getElementById('feedbackMessage').value || '').trim();
+    const errEl    = document.getElementById('feedbackError');
+    errEl.textContent = '';
+
+    if (!subject)  { errEl.textContent = '⚠️ Please enter a subject.'; return; }
+    if (!message)  { errEl.textContent = '⚠️ Please write your message.'; return; }
+    if (message.length < 10) {
+        errEl.textContent = '⚠️ Message is too short — give a bit more detail.';
+        return;
+    }
+
+    const btn = document.getElementById('feedbackSubmitBtn');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Sending…';
+
+    try {
+        const _u = LIVE_USERS[currentLoggedInName] || {};
+        const id = await window.FB.addDoc(
+            window.FB.collection(window.FB.db, FEEDBACK_COLLECTION),
+            {
+                from: currentLoggedInName,
+                fromRole: currentRole,
+                fromDept: currentInchargeDept || _u.dept || '',
+                category, subject, message,
+                status: 'open',
+                createdAt: window.FB.serverTimestamp(),
+                adminReply: '', adminReplyBy: '', adminRepliedAt: '',
+                readByAdmin: false, readByUser: true
+            }
+        );
+
+        // Notify every System Manager
+        try {
+            const users = await loadUsersFromFirestore();
+            const admins = Object.keys(users).filter(n => users[n].role === 'supervisor');
+            for (const a of admins) {
+                await createNotification({
+                    recipient: a,
+                    type: 'user_feedback',
+                    title: '📬 New message from ' + currentLoggedInName,
+                    message: subject + ' — ' + message.substring(0, 110),
+                    relatedDocId: id
+                });
+            }
+        } catch (e) { /* non-fatal */ }
+
+        showStatus('✅ Message sent to admin.', true);
+
+        // Clean the form, jump to history so they see their message
+        document.getElementById('feedbackSubject').value = '';
+        document.getElementById('feedbackMessage').value = '';
+        document.getElementById('feedbackCategory').value = 'general';
+        document.getElementById('userFeedbackForm').style.display = 'none';
+        document.getElementById('userFeedbackList').style.display = 'block';
+        await renderUserFeedbackHistory();
+    } catch (e) {
+        errEl.textContent = '⚠️ ' + (e.message || 'Failed to send.');
+    }
+    btn.disabled = false;
+    btn.innerHTML = orig;
+}
+
+/* ---------- Fetch a user's own messages ---------- */
+async function fetchMyFeedback() {
+    try {
+        if (!window.FB || !window.FB.ready || !currentLoggedInName) return [];
+        const snap = await window.FB.getDocs(
+            window.FB.query(
+                window.FB.collection(window.FB.db, FEEDBACK_COLLECTION),
+                window.FB.limit(100)
+            )
+        );
+        const out = [];
+        snap.forEach(doc => {
+            const d = doc.data() || {};
+            if (normalizeText(d.from) !== normalizeText(currentLoggedInName)) return;
+            out.push({
+                _docId: doc.id,
+                from: d.from || '', fromRole: d.fromRole || '', fromDept: d.fromDept || '',
+                category: d.category || 'general',
+                subject: d.subject || '',
+                message: d.message || '',
+                status: d.status || 'open',
+                createdAt: d.createdAt && d.createdAt.toDate ? d.createdAt.toDate().toISOString() : (d.createdAt || ''),
+                adminReply: d.adminReply || '',
+                adminReplyBy: d.adminReplyBy || '',
+                adminRepliedAt: d.adminRepliedAt && d.adminRepliedAt.toDate ? d.adminRepliedAt.toDate().toISOString() : (d.adminRepliedAt || '')
+            });
+        });
+        out.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        return out;
+    } catch (e) {
+        console.error('fetchMyFeedback:', e);
+        return [];
+    }
+}
+
+/* ---------- Fetch all feedback (admin) ---------- */
+async function fetchAllFeedback() {
+    try {
+        if (!window.FB || !window.FB.ready) return [];
+        const snap = await window.FB.getDocs(
+            window.FB.query(
+                window.FB.collection(window.FB.db, FEEDBACK_COLLECTION),
+                window.FB.limit(200)
+            )
+        );
+        const out = [];
+        snap.forEach(doc => {
+            const d = doc.data() || {};
+            out.push({
+                _docId: doc.id,
+                from: d.from || '', fromRole: d.fromRole || '', fromDept: d.fromDept || '',
+                category: d.category || 'general',
+                subject: d.subject || '',
+                message: d.message || '',
+                status: d.status || 'open',
+                createdAt: d.createdAt && d.createdAt.toDate ? d.createdAt.toDate().toISOString() : (d.createdAt || ''),
+                adminReply: d.adminReply || '',
+                adminReplyBy: d.adminReplyBy || '',
+                adminRepliedAt: d.adminRepliedAt && d.adminRepliedAt.toDate ? d.adminRepliedAt.toDate().toISOString() : (d.adminRepliedAt || ''),
+                readByAdmin: d.readByAdmin === true
+            });
+        });
+        out.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        return out;
+    } catch (e) {
+        console.error('fetchAllFeedback:', e);
+        return [];
+    }
+}
+
+/* ---------- Card renderer (shared) ---------- */
+function renderFeedbackCard(fb, isAdmin) {
+    const icon  = FEEDBACK_CATEGORY_ICONS[fb.category] || '💬';
+    const badge = FEEDBACK_STATUS_LABELS[fb.status] || fb.status;
+    const badgeCls = fb.status === 'replied' ? 'verified'
+                   : fb.status === 'closed' ? 'completed'
+                   : 'pending';
+    const safeId = escapeHtml(fb._docId);
+
+    let h = `<div class="user-feedback-card status-${fb.status}">
+        <div class="ufc-head">
+            <div>
+                <div class="ufc-subject">${icon} ${escapeHtml(fb.subject)}</div>
+                <div class="ufc-meta">
+                    👤 ${escapeHtml(fb.from || '—')}
+                    ${fb.fromRole ? ' · ' + escapeHtml(fb.fromRole) : ''}
+                    ${fb.fromDept ? ' · ' + escapeHtml(fb.fromDept) : ''}
+                    · 📅 ${formatDateOnly(fb.createdAt)}
+                </div>
+            </div>
+            <div style="text-align:right;">
+                <span class="curative-status-badge ${badgeCls}">${badge}</span>
+            </div>
+        </div>
+        <div class="ufc-body">${escapeHtml(fb.message)}</div>`;
+
+    if (fb.adminReply) {
+        h += `<div class="ufc-reply">
+            <div class="ufc-reply-head">✅ Reply from ${escapeHtml(fb.adminReplyBy || 'Admin')} · ${formatDateOnly(fb.adminRepliedAt)}</div>
+            ${escapeHtml(fb.adminReply)}
+        </div>`;
+    }
+
+    if (isAdmin && fb.status !== 'replied' && fb.status !== 'closed') {
+        h += `<div class="ufc-actions" style="flex-direction:column;align-items:stretch;">
+            <textarea data-reply-id="${safeId}" placeholder="Type your reply to ${escapeHtml(fb.from || 'the user')}…"></textarea>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                <button class="btn-approve" data-send-reply="${safeId}" style="padding:6px 16px;font-size:.82rem;">📤 Send Reply</button>
+                <button class="btn-secondary" data-close-feedback="${safeId}" style="padding:6px 16px;font-size:.82rem;">🔒 Close without reply</button>
+            </div>
+        </div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
+/* ---------- Render user's own history ---------- */
+async function renderUserFeedbackHistory() {
+    const wrap = document.getElementById('feedbackHistory');
+    if (!wrap) return;
+    wrap.innerHTML = '<div style="text-align:center;padding:14px;color:#9cb9d0;font-style:italic;">⏳ Loading…</div>';
+    const list = await fetchMyFeedback();
+    if (!list.length) {
+        wrap.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 You have not sent any messages yet.</div>';
+        return;
+    }
+    wrap.innerHTML = list.map(f => renderFeedbackCard(f, false)).join('');
+}
+
+/* ---------- Admin: send reply ---------- */
+async function sendAdminReply(id, replyText) {
+    try {
+        const all = await fetchAllFeedback();
+        const fb = all.find(x => x._docId === id);
+        if (!fb) return;
+
+        const ok = await window.FB.updateDoc(
+            window.FB.doc(window.FB.db, FEEDBACK_COLLECTION, id),
+            {
+                adminReply: replyText,
+                adminReplyBy: currentLoggedInName,
+                adminRepliedAt: window.FB.serverTimestamp(),
+                status: 'replied',
+                readByAdmin: true
+            }
+        ).then(() => true).catch(() => false);
+
+        if (!ok) throw new Error('Update failed');
+
+        if (fb.from) {
+            await createNotification({
+                recipient: fb.from,
+                type: 'user_feedback_reply',
+                title: '✉️ Reply from Admin — ' + fb.subject,
+                message: replyText.substring(0, 150),
+                relatedDocId: id
+            });
+        }
+        showStatus('✅ Reply sent to ' + (fb.from || 'user') + '.', true);
+        await refreshSupervisorFeedback();
+        await renderNotificationBell();
+    } catch (e) {
+        showStatus('⚠️ ' + (e.message || 'Failed to reply.'), false);
+    }
+}
+
+/* ---------- Admin: load & render all messages ---------- */
+async function refreshSupervisorFeedback() {
+    const wrap = document.getElementById('supervisorFeedbackList');
+    const cnt  = document.getElementById('userFeedbackCount');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="skeleton-stack"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>';
+    try {
+        let all = await fetchAllFeedback();
+        // Do not show the supervisor their own messages
+        all = all.filter(f => f.fromRole !== 'supervisor');
+
+        if (cnt) cnt.textContent = all.filter(f => f.status === 'open').length;
+
+        let filtered = all;
+        if (CURRENT_FEEDBACK_FILTER === 'open') {
+            filtered = all.filter(f => f.status === 'open');
+        } else if (CURRENT_FEEDBACK_FILTER === 'replied') {
+            filtered = all.filter(f => f.status === 'replied' || f.status === 'closed');
+        }
+
+        if (!filtered.length) {
+            wrap.innerHTML = '<div style="text-align:center;padding:18px;color:#9cb9d0;font-style:italic;">📭 No messages in this filter.</div>';
+            return;
+        }
+        wrap.innerHTML = filtered.map(f => renderFeedbackCard(f, true)).join('');
+
+        // Send reply
+        wrap.querySelectorAll('[data-send-reply]').forEach(b => b.addEventListener('click', async function () {
+            const id = b.getAttribute('data-send-reply');
+            const ta = wrap.querySelector(`[data-reply-id="${id}"]`);
+            const reply = ta ? ta.value.trim() : '';
+            if (!reply) { alert('⚠️ Write a reply first.'); return; }
+            const orig = b.innerHTML;
+            b.disabled = true; b.innerHTML = '⏳ …';
+            await sendAdminReply(id, reply);
+            b.disabled = false; b.innerHTML = orig;
+        }));
+
+        // Close without reply
+        wrap.querySelectorAll('[data-close-feedback]').forEach(b => b.addEventListener('click', async function () {
+            const id = b.getAttribute('data-close-feedback');
+            const ok = await smartConfirm(
+                'Close this message without a reply? The sender will not receive a notification.',
+                { title: '🔒 Close Message', icon: '🔒', okText: 'Close', danger: false }
+            );
+            if (!ok) return;
+            try {
+                await window.FB.updateDoc(
+                    window.FB.doc(window.FB.db, FEEDBACK_COLLECTION, id),
+                    { status: 'closed', readByAdmin: true }
+                );
+                showStatus('🔒 Message closed.', true);
+                await refreshSupervisorFeedback();
+            } catch (e) { showStatus('⚠️ ' + e.message, false); }
+        }));
+    } catch (e) {
+        wrap.innerHTML = '<div class="info-error">⚠️ ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+/* ---------- Wire up the modal & admin card ---------- */
+document.getElementById('feedbackBtn')?.addEventListener('click', async () => {
+    document.getElementById('feedbackError').textContent = '';
+    document.getElementById('feedbackSubject').value = '';
+    document.getElementById('feedbackMessage').value = '';
+    document.getElementById('feedbackCategory').value = 'general';
+    document.getElementById('userFeedbackForm').style.display = 'block';
+    document.getElementById('userFeedbackList').style.display = 'none';
+    document.getElementById('userFeedbackModal').classList.add('show');
+});
+
+document.getElementById('feedbackCloseBtn')?.addEventListener('click',
+    () => document.getElementById('userFeedbackModal').classList.remove('show'));
+
+document.getElementById('feedbackSubmitBtn')?.addEventListener('click', submitUserFeedback);
+
+document.getElementById('feedbackToggleListBtn')?.addEventListener('click', async () => {
+    document.getElementById('userFeedbackForm').style.display = 'none';
+    document.getElementById('userFeedbackList').style.display = 'block';
+    await renderUserFeedbackHistory();
+});
+
+document.getElementById('feedbackBackBtn')?.addEventListener('click', () => {
+    document.getElementById('userFeedbackForm').style.display = 'block';
+    document.getElementById('userFeedbackList').style.display = 'none';
+});
+
+document.getElementById('feedbackRefreshBtn')?.addEventListener('click', refreshSupervisorFeedback);
+
+document.querySelectorAll('#feedbackFilterBar .filter-chip').forEach(c => c.addEventListener('click', function () {
+    document.querySelectorAll('#feedbackFilterBar .filter-chip').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+    CURRENT_FEEDBACK_FILTER = this.dataset.status;
+    refreshSupervisorFeedback();
+}));
             // ===== AUTO-HIDING INSPECTION CHECKLIST =====
             function updateChecklistProgress() {
                 const isAC = document.getElementById('acChecklistBlock').style.display === 'block';
