@@ -26,7 +26,7 @@
     (function() {
         'use strict';
         const UPDATE = {
-            currentVersion: '1.0.1',        // ⬅️ CHANGE THIS each time you deploy new HTML
+            currentVersion: '1.0.2',        // ⬅️ CHANGE THIS each time you deploy new HTML
             versionUrl: './version.json',
             checkIntervalMs: 5 * 60 * 1000, // check every 5 minutes
             notified: false,
@@ -4971,6 +4971,31 @@ window.setupPushNotifications = async function(userName) {
                 </div>
             </div>
         </div>
+        <!-- ============ MANAGE DEPARTMENTS CARD ============ -->
+<div class="card collapsible-card collapsed" id="manageDepartmentsCard" style="margin-bottom:24px;border:2px solid #1b6b3f;">
+    <div class="card-header" style="background:#e2f0e6;color:#1b6b3f;">
+        <span>🏢</span> Manage Departments
+        <span style="margin-left:auto;font-size:.78rem;background:#1b6b3f;color:white;padding:3px 12px;border-radius:20px;font-weight:700;">Manager Only</span>
+        <span class="collapse-caret">▼</span>
+    </div>
+    <div class="card-body">
+        <p style="font-size:.88rem;color:#5b7b96;margin-bottom:14px;">Add new departments here. They will instantly appear in the login screen, equipment forms, and filters across the app.</p>
+        
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+            <input type="text" id="newDeptNameInput" placeholder="Department Name (e.g. Radiology)" style="flex:1; padding:12px 16px; border-radius:16px; border:1.5px solid #cfdfeb; font-family:inherit; min-width:200px;">
+            <input type="text" id="newDeptInchargeInput" placeholder="Default In-Charge (optional)" style="flex:1; padding:12px 16px; border-radius:16px; border:1.5px solid #cfdfeb; font-family:inherit; min-width:200px;">
+            <button class="btn-add" id="addNewDeptBtn" style="padding:12px 24px;">➕ Add Department</button>
+        </div>
+
+        <div id="deptEditorList" style="margin-bottom:12px;">
+            <!-- Department list will render here -->
+        </div>
+        
+        <div style="display:flex; justify-content:flex-end;">
+            <button class="btn-primary" id="saveDepartmentsBtn" style="padding:12px 24px; font-size:.95rem;">💾 Save All Changes</button>
+        </div>
+    </div>
+</div>
         <!-- ============ ACTION BUTTONS ============ -->
         <div class="action-buttons" id="technicianActionButtons">
             
@@ -9727,6 +9752,7 @@ const icTaskCard = document.getElementById('icMyTasksCard');
                 }
                 if (isSup) {
                     populateSupervisorDeptFilter();
+                    renderDepartmentEditor();
                     populateSupervisorOwnerFilter();
                     populateDashDeptSelect();
                     populateCurativeDeptSelect();
@@ -11608,6 +11634,109 @@ techs[n] = {
                 await populateTechnicianLoginSelect();
                 this.disabled = false;
                 this.innerHTML = o;
+            });
+            /* ============================================================
+               MANAGE DEPARTMENTS
+               ============================================================ */
+            function renderDepartmentEditor() {
+                const wrap = document.getElementById('deptEditorList');
+                if (!wrap) return;
+                wrap.innerHTML = '';
+                
+                const names = Object.keys(DEPARTMENTS).sort();
+                
+                names.forEach(name => {
+                    const d = DEPARTMENTS[name];
+                    const row = document.createElement('div');
+                    row.className = 'dept-editor-row';
+                    row.innerHTML = `
+                        <div>
+                            <label style="font-size:.75rem;color:#5b7b96;font-weight:700;">DEPARTMENT NAME</label>
+                            <input type="text" class="dept-name-input" value="${escapeHtml(name)}" style="width:100%;font-weight:700;">
+                        </div>
+                        <div>
+                            <label style="font-size:.75rem;color:#5b7b96;font-weight:700;">DEFAULT IN-CHARGE</label>
+                            <input type="text" class="dept-incharge-input" value="${escapeHtml(d.defaultIncharge || '')}" style="width:100%;">
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn-danger" data-del-dept="${escapeHtml(name)}">🗑️</button>
+                        </div>
+                    `;
+                    wrap.appendChild(row);
+                });
+
+                wrap.querySelectorAll('[data-del-dept]').forEach(b => b.addEventListener('click', async function () {
+                    const name = this.getAttribute('data-del-dept');
+                    if (!await smartConfirm(`Delete department "${name}"? Equipment in this department will need to be reassigned manually.`, { danger: true, okText: 'Delete', title: '🗑️ Delete Department', icon: '🗑️' })) return;
+                    delete DEPARTMENTS[name];
+                    renderDepartmentEditor();
+                }));
+            }
+
+            document.getElementById('addNewDeptBtn')?.addEventListener('click', () => {
+                const input = document.getElementById('newDeptNameInput');
+                const inchargeInput = document.getElementById('newDeptInchargeInput');
+                const name = (input.value || '').trim();
+                const incharge = (inchargeInput.value || '').trim();
+                
+                if (!name) { alert('Please enter a department name.'); return; }
+                if (DEPARTMENTS[name]) { alert('This department already exists.'); return; }
+                
+                DEPARTMENTS[name] = { defaultIncharge: incharge, services: [] };
+                input.value = '';
+                inchargeInput.value = '';
+                renderDepartmentEditor();
+            });
+
+            document.getElementById('saveDepartmentsBtn')?.addEventListener('click', async function () {
+                const rows = document.querySelectorAll('#deptEditorList .dept-editor-row');
+                const newDepts = {};
+                
+                rows.forEach(row => {
+                    const name = (row.querySelector('.dept-name-input').value || '').trim();
+                    const incharge = (row.querySelector('.dept-incharge-input').value || '').trim();
+                    if (name) {
+                        newDepts[name] = {
+                            defaultIncharge: incharge,
+                            services: (DEPARTMENTS[name] && DEPARTMENTS[name].services) || []
+                        };
+                    }
+                });
+
+                const names = Object.keys(newDepts);
+                const uniqueNames = new Set(names);
+                if (names.length !== uniqueNames.size) {
+                    alert('⚠️ Duplicate department names detected. Please ensure all names are unique.');
+                    return;
+                }
+
+                DEPARTMENTS = newDepts;
+                
+                this.disabled = true;
+                const orig = this.innerHTML;
+                this.innerHTML = '⏳ Saving to Cloud...';
+                
+                try {
+                    const success = await firestoreConfigSet(DEPT_CLOUD_KEY, JSON.stringify(DEPARTMENTS));
+                    if (!success) throw new Error('Cloud save failed.');
+                    
+                    cacheDepartmentsLocally(DEPARTMENTS);
+                    
+                    populateLoginDepartmentSelect();
+                    populateDepartmentSelect();
+                    populateSupervisorDeptFilter();
+                    populateDashDeptSelect();
+                    populateCurativeDeptSelect();
+                    if (typeof populateAnalysisDeptSelect === 'function') populateAnalysisDeptSelect();
+                    
+                    showStatus('✅ Departments saved to cloud successfully.', true);
+                    renderDepartmentEditor();
+                } catch (e) {
+                    showStatus('⚠️ ' + e.message, false);
+                }
+                
+                this.disabled = false;
+                this.innerHTML = orig;
             });
 
             /* ============================================================
